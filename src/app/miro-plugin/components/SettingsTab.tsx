@@ -16,10 +16,6 @@ interface SettingsTabProps {
   useTauri: boolean;
   defaultPngScale: number;
   onDefaultPngScaleChange: (value: number) => void;
-  liveFigmaSelection?: boolean;
-  setLiveFigmaSelection?: (value: boolean) => void;
-  /** True when the Figma plan is free/Community (or never detected); the toggle is hard-disabled. */
-  figmaIsCommunity?: boolean;
   rateLimited?: boolean;
   figmaApiCalls?: number;
   figmaCacheHits?: number;
@@ -47,9 +43,6 @@ export function SettingsTab({
   useTauri,
   defaultPngScale,
   onDefaultPngScaleChange,
-  liveFigmaSelection = false,
-  setLiveFigmaSelection = () => {},
-  figmaIsCommunity = false,
   rateLimited = false,
   figmaApiCalls = 0,
   figmaCacheHits = 0,
@@ -62,12 +55,6 @@ export function SettingsTab({
   hideMiro = false,
 }: SettingsTabProps) {
   const [showPairingId, setShowPairingId] = useState(false);
-  // Community gating lives HERE so every consumer (mirror AND Miro sidebar)
-  // resolves it identically: greyed out when the plan is free/Community or
-  // never detectable (undefined/null tier). No per-page wiring can bypass it.
-  const communityPlan =
-    figmaIsCommunity ??
-    (figmaTier === undefined || figmaTier === null || /community|free|starter/i.test(figmaTier));
   return (
     <div className="flex-grow flex flex-col gap-6">
       <div>
@@ -220,39 +207,6 @@ export function SettingsTab({
                 <option key={s} value={s}>{s}x</option>
               ))}
             </select>
-          </div>
-
-          <div
-            className={
-              communityPlan
-                ? 'p-3 rounded-lg bg-bg-card/50 border border-border-card/50 flex justify-between items-center gap-2 opacity-50 select-none'
-                : 'p-3 rounded-lg bg-bg-card border border-border-card flex justify-between items-center gap-2'
-            }
-          >
-            <div className="flex flex-col gap-0.5 pr-2">
-              <div className="text-xs font-semibold text-text-page">Live Figma selection</div>
-              {rateLimited ? (
-                <div className="text-[10px] text-text-muted">Paused — Figma is rate limiting</div>
-              ) : communityPlan ? null : (
-                <div className="text-[10px] text-text-muted">
-                  Auto-fill Import from the Figma selection (off by default)
-                </div>
-              )}
-            </div>
-            {communityPlan ? (
-              <span className="text-[8px] font-mono uppercase tracking-wider text-text-muted/50">
-                Community
-              </span>
-            ) : (
-              <input
-                type="checkbox"
-                checked={liveFigmaSelection}
-                onChange={(e) => setLiveFigmaSelection(e.target.checked)}
-                disabled={rateLimited}
-                className={"accent-accent w-3 h-3 cursor-pointer " + (rateLimited ? 'opacity-40 cursor-not-allowed' : '')}
-                aria-label="Live Figma selection"
-              />
-            )}
           </div>
 
           {/* API-call telemetry — real session counters, nothing made up. */}

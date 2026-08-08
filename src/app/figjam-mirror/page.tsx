@@ -189,9 +189,6 @@ export default function FigJamPluginPage() {
             defaultPngScale={defaultPngScale}
             onDefaultPngScaleChange={handleDefaultPngScaleChange}
             availableScales={AVAILABLE_SCALES}
-            liveFigmaSelection={hook.liveFigmaSelection}
-            setLiveFigmaSelection={hook.setLiveFigmaSelection}
-            figmaIsCommunity={hook.figmaIsCommunity}
             rateLimited={hook.rateLimited}
             figmaApiCalls={hook.figmaApiCalls}
             figmaCacheHits={hook.figmaCacheHits}
