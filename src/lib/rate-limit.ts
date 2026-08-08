@@ -69,10 +69,10 @@ export interface PlanConfig {
 const COMMUNITY_PLAN: PlanConfig = {
   figmaPerMin: envInt("RATE_LIMIT_COMMUNITY_FIGMA_PER_MIN", 5),
   figmaPerDay: envInt("RATE_LIMIT_COMMUNITY_FIGMA_PER_DAY", 50),
-  relayPerMin: envInt("RATE_LIMIT_COMMUNITY_RELAY_PER_MIN", 5),
-  relayPerHour: envInt("RATE_LIMIT_COMMUNITY_RELAY_PER_HOUR", 30),
-  relayPerDay: envInt("RATE_LIMIT_COMMUNITY_RELAY_PER_DAY", 100),
-  relayResponsePerMin: envInt("RATE_LIMIT_COMMUNITY_RELAY_RESPONSE_PER_MIN", 20),
+  relayPerMin: envInt("RATE_LIMIT_COMMUNITY_RELAY_PER_MIN", 8),
+  relayPerHour: envInt("RATE_LIMIT_COMMUNITY_RELAY_PER_HOUR", 60),
+  relayPerDay: envInt("RATE_LIMIT_COMMUNITY_RELAY_PER_DAY", 200),
+  relayResponsePerMin: envInt("RATE_LIMIT_COMMUNITY_RELAY_RESPONSE_PER_MIN", 40),
   relaySessionPerMin: envInt("RATE_LIMIT_COMMUNITY_RELAY_SESSION_PER_MIN", 4),
   updateImagePerMin: envInt("RATE_LIMIT_COMMUNITY_UPDATE_IMAGE_PER_MIN", 10),
   ablyTokenPerMin: envInt("RATE_LIMIT_COMMUNITY_ABLY_TOKEN_PER_MIN", 5),
@@ -80,8 +80,8 @@ const COMMUNITY_PLAN: PlanConfig = {
   oauthStoreGetPerMin: envInt("RATE_LIMIT_COMMUNITY_OAUTH_STORE_GET_PER_MIN", 40),
   oauthStorePostPerMin: envInt("RATE_LIMIT_COMMUNITY_OAUTH_STORE_POST_PER_MIN", 12),
   oauthCallbackPerMin: envInt("RATE_LIMIT_COMMUNITY_OAUTH_CALLBACK_PER_MIN", 20),
-  relayExportPerMin: envInt("RATE_LIMIT_COMMUNITY_RELAY_EXPORT_PER_MIN", 2),
-  relayExportPerDay: envInt("RATE_LIMIT_COMMUNITY_RELAY_EXPORT_PER_DAY", 20),
+  relayExportPerMin: envInt("RATE_LIMIT_COMMUNITY_RELAY_EXPORT_PER_MIN", 8),
+  relayExportPerDay: envInt("RATE_LIMIT_COMMUNITY_RELAY_EXPORT_PER_DAY", 100),
   globalSyncsPerDay: envInt("RATE_LIMIT_COMMUNITY_GLOBAL_SYNCS_PER_DAY", 500),
 };
 

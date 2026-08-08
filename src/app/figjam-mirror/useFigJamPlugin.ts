@@ -555,7 +555,7 @@ useEffect(() => {
           if (res.status === 429 && errText.trim() === 'rate_limit_exceeded') {
             const wait = data.retryAfter && data.retryAfter > 0 ? Math.ceil(data.retryAfter) : 10;
             throw new Error(
-              `SyncingBoard server is momentarily at its own safety cap (per-IP) — wait ${wait}s and retry. This is neither Figma nor Penpot limiting.`
+              `SyncingBoard server is momentarily at its own safety cap (own rate limiter: per-IP or per-pairing) — wait ${wait}s and retry. Neither Figma nor Penpot is limiting.`
             );
           }
           const isRate = res.status === 429;
