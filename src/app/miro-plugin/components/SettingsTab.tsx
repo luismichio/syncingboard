@@ -227,10 +227,10 @@ export function SettingsTab({
               <span className="text-xs font-semibold text-text-page">Live Figma selection</span>
               <span className="text-[9px] text-text-muted leading-tight">
                 {rateLimited
-                  ? 'Paused — Figma is rate-limiting. It re-enables in a few seconds.'
+                  ? 'Paused — Figma is rate-limiting.'
                   : communityPlan
-                    ? 'Greyed out — disabled on the Community plan. Polling would burn Figma rate budget; enables automatically on Pro.'
-                    : 'Auto-fill Import from the Figma design selection (uses relay quota — off by default)'}
+                    ? 'Requires a Pro plan'
+                    : 'Auto-fill Import from the Figma selection (off by default)'}
               </span>
             </div>
             <div className="flex flex-col items-center gap-1 shrink-0">
