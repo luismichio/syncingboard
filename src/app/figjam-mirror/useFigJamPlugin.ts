@@ -262,31 +262,11 @@ const [rateBudget, setRateBudget] = useState<{ remaining: number | null; resetAt
 const apiWindowRef = useRef<number[]>([]);
 const [rateWindow, setRateWindow] = useState<{ count: number; limit: number }>({ count: 0, limit: DEFAULT_WINDOW_LIMIT });
 const [figmaTier, setFigmaTier] = useState<string | null>(null);
-// Live-selection polling is only affordable on a paid Figma plan: on the
-// free/Community tier (or when the tier was never detected), the toggle is
-// greyed out. The user can confirm a Pro plan explicitly (persisted).
-const [planOverride, setPlanOverride] = useState<'auto' | 'pro'>(() => {
-  if (typeof window === 'undefined') return 'auto';
-  try {
-    return localStorage.getItem('sb_figma_plan_override') === 'pro' ? 'pro' : 'auto';
-  } catch {
-    return 'auto';
-  }
-});
+// Live-selection polling is a Pro-plan feature: on the free/Community tier
+// (or when the tier was never detected) the toggle is ALWAYS greyed out and
+// disabled — no override exists.
 const figmaIsCommunity =
-  planOverride !== 'pro' &&
-  (figmaTier === null || /community|free|starter/i.test(figmaTier));
-const togglePlanOverride = useCallback(() => {
-  setPlanOverride((prev) => {
-    const next = prev === 'pro' ? 'auto' : 'pro';
-    try {
-      localStorage.setItem('sb_figma_plan_override', next);
-    } catch {
-      /* ignore */
-    }
-    return next;
-  });
-}, []);
+  figmaTier === null || /community|free|starter/i.test(figmaTier);
 const [limitOverride, setLimitOverrideState] = useState<number | null>(null);
 const effectiveLimit = useCallback((): number => {
   const overridden = limitOverrideRef.current;
@@ -1190,7 +1170,6 @@ useEffect(() => {
     rateWindow,
     figmaTier,
     figmaIsCommunity,
-    togglePlanOverride,
     limitOverride,
     setFigmaWindowOverride,
     cooldownUntil,

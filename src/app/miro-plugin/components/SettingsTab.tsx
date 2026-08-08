@@ -18,10 +18,8 @@ interface SettingsTabProps {
   onDefaultPngScaleChange: (value: number) => void;
   liveFigmaSelection?: boolean;
   setLiveFigmaSelection?: (value: boolean) => void;
-  /** True when the Figma plan is free/Community (or never detected); greys out the toggle. */
+  /** True when the Figma plan is free/Community (or never detected); the toggle is hard-disabled. */
   figmaIsCommunity?: boolean;
-  /** Confirms a paid Figma plan manually so live selection can be enabled. */
-  onTogglePlanOverride?: () => void;
   rateLimited?: boolean;
   figmaApiCalls?: number;
   figmaCacheHits?: number;
@@ -52,7 +50,6 @@ export function SettingsTab({
   liveFigmaSelection = false,
   setLiveFigmaSelection = () => {},
   figmaIsCommunity = false,
-  onTogglePlanOverride = () => {},
   rateLimited = false,
   figmaApiCalls = 0,
   figmaCacheHits = 0,
@@ -226,18 +223,9 @@ export function SettingsTab({
                 {rateLimited
                   ? 'Paused — Figma is rate-limiting. It re-enables in a few seconds.'
                   : figmaIsCommunity
-                    ? 'Requires a paid Figma plan — polling burns Community rate budget. Confirm Pro to enable.'
+                    ? 'Disabled on the Community plan — polling would burn Figma rate budget (Pro accounts auto-enable).'
                     : 'Auto-fill Import from the Figma design selection (uses relay quota — off by default)'}
               </span>
-              {figmaIsCommunity && !rateLimited ? (
-                <button
-                  type="button"
-                  onClick={onTogglePlanOverride}
-                  className="mt-1 text-left text-[9px] font-mono text-accent hover:opacity-80 cursor-pointer"
-                >
-                  I'm on a paid Figma plan — enable
-                </button>
-              ) : null}
             </div>
             <div className="flex flex-col items-center gap-1 shrink-0">
               <div

@@ -192,7 +192,6 @@ export default function FigJamPluginPage() {
             liveFigmaSelection={hook.liveFigmaSelection}
             setLiveFigmaSelection={hook.setLiveFigmaSelection}
             figmaIsCommunity={hook.figmaIsCommunity}
-            onTogglePlanOverride={hook.togglePlanOverride}
             rateLimited={hook.rateLimited}
             figmaApiCalls={hook.figmaApiCalls}
             figmaCacheHits={hook.figmaCacheHits}
