@@ -18,6 +18,10 @@ interface SettingsTabProps {
   onDefaultPngScaleChange: (value: number) => void;
   liveFigmaSelection?: boolean;
   setLiveFigmaSelection?: (value: boolean) => void;
+  /** True when the Figma plan is free/Community (or never detected); greys out the toggle. */
+  figmaIsCommunity?: boolean;
+  /** Confirms a paid Figma plan manually so live selection can be enabled. */
+  onTogglePlanOverride?: () => void;
   rateLimited?: boolean;
   figmaApiCalls?: number;
   figmaCacheHits?: number;
@@ -47,6 +51,8 @@ export function SettingsTab({
   onDefaultPngScaleChange,
   liveFigmaSelection = false,
   setLiveFigmaSelection = () => {},
+  figmaIsCommunity = false,
+  onTogglePlanOverride = () => {},
   rateLimited = false,
   figmaApiCalls = 0,
   figmaCacheHits = 0,
@@ -213,23 +219,45 @@ export function SettingsTab({
             </select>
           </div>
 
-          <div className="p-3 rounded-lg bg-bg-card border border-border-card flex justify-between items-center">
+          <div className="p-3 rounded-lg bg-bg-card border border-border-card flex justify-between items-center gap-2">
             <div className="flex flex-col gap-0.5 pr-2">
               <span className="text-xs font-semibold text-text-page">Live Figma selection</span>
               <span className="text-[9px] text-text-muted leading-tight">
                 {rateLimited
                   ? 'Paused — Figma is rate-limiting. It re-enables in a few seconds.'
-                  : 'Auto-fill Import from the Figma design selection (uses relay quota — off by default)'}
+                  : figmaIsCommunity
+                    ? 'Requires a paid Figma plan — polling burns Community rate budget. Confirm Pro to enable.'
+                    : 'Auto-fill Import from the Figma design selection (uses relay quota — off by default)'}
               </span>
+              {figmaIsCommunity && !rateLimited ? (
+                <button
+                  type="button"
+                  onClick={onTogglePlanOverride}
+                  className="mt-1 text-left text-[9px] font-mono text-accent hover:opacity-80 cursor-pointer"
+                >
+                  I'm on a paid Figma plan — enable
+                </button>
+              ) : null}
             </div>
-            <input
-              type="checkbox"
-              checked={liveFigmaSelection}
-              onChange={(e) => setLiveFigmaSelection(e.target.checked)}
-              disabled={rateLimited}
-              className={"accent-accent w-3 h-3 shrink-0 cursor-pointer " + (rateLimited ? 'opacity-40 cursor-not-allowed' : '')}
-              aria-label="Live Figma selection"
-            />
+            <div className="flex flex-col items-center gap-1 shrink-0">
+              <div
+                className={
+                  figmaIsCommunity
+                    ? 'text-[8px] font-mono text-text-muted/70 border border-border-card rounded px-1 py-0.5'
+                    : 'text-[8px] font-mono text-text-muted/0 border border-transparent rounded px-1 py-0.5'
+                }
+              >
+                COMMUNITY
+              </div>
+              <input
+                type="checkbox"
+                checked={liveFigmaSelection}
+                onChange={(e) => setLiveFigmaSelection(e.target.checked)}
+                disabled={rateLimited || figmaIsCommunity}
+                className={"accent-accent w-3 h-3 cursor-pointer " + (rateLimited || figmaIsCommunity ? 'opacity-40 cursor-not-allowed' : '')}
+                aria-label="Live Figma selection"
+              />
+            </div>
           </div>
 
           {/* API-call telemetry — real session counters, nothing made up. */}
