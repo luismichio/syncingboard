@@ -26,6 +26,7 @@ interface SettingsTabProps {
   figmaTier?: string | null;
   limitOverride?: number | null;
   setFigmaWindowOverride?: (n: number | null) => void;
+  cooldownUntil?: number;
   availableScales: number[];
   hideMiro?: boolean;
 }
@@ -55,6 +56,7 @@ export function SettingsTab({
   figmaTier = null,
   limitOverride = null,
   setFigmaWindowOverride = () => {},
+  cooldownUntil = 0,
   availableScales,
   hideMiro = false,
 }: SettingsTabProps) {
@@ -279,6 +281,16 @@ export function SettingsTab({
                 <span className="text-text-muted">calls/min</span>
               </div>
               <div>Served from cache: same frame+scale+format within 90s costs 0 calls.</div>
+              {cooldownUntil > Date.now() ? (
+                <div className="text-red-600 dark:text-red-400 mt-1">
+                  Figma cooldown until{' '}
+                  {new Date(cooldownUntil).toLocaleTimeString([], {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                  })}
+                </div>
+              ) : null}
               {figmaRateInfo ? (
                 <div className="text-red-600 dark:text-red-400 mt-1">
                   rate limit: {figmaRateInfo}

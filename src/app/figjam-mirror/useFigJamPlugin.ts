@@ -240,6 +240,13 @@ export function useFigJamPlugin() {
 const DEFAULT_WINDOW_LIMIT = 10;
 const windowLimitRef = useRef(DEFAULT_WINDOW_LIMIT);
 const limitOverrideRef = useRef<number | null>(null);
+// Figma's limit profile has MORE dimensions than our window (per-file
+// rules, burst classes, priority tiers — see X-Figma-Rate-Limit-Type). ANY
+// 429 or a 0-remaining header engages a session COOLDOWN during which no
+// render starts; the window pacer covers the documented calls/min, the
+// cooldown covers everything else.
+const [cooldownUntil, setCooldownUntil] = useState(0);
+const cooldownUntilRef = useRef(0);
 const apiWindowRef = useRef<number[]>([]);
 const [rateWindow, setRateWindow] = useState<{ count: number; limit: number }>({ count: 0, limit: DEFAULT_WINDOW_LIMIT });
 const [figmaTier, setFigmaTier] = useState<string | null>(null);
@@ -307,6 +314,13 @@ const waitForRateSlot = useCallback(async (): Promise<void> => {
     setRateWindow({ count: apiWindowRef.current.length, limit: effectiveLimit() });
     await new Promise((resolve) => setTimeout(resolve, Math.min(Math.max(waitMs, 5_000), 40_000)));
     pruneWindow();
+  }
+  // Cooldown gate: after a 429 or a zero-remaining header Figma's own
+  // limiter is engaged (its rules are multi-dimensional: per-file, burst,
+  // priority). No render starts until the cooldown passes.
+  while (Date.now() < cooldownUntilRef.current) {
+    const leftMs = cooldownUntilRef.current - Date.now();
+    await new Promise((resolve) => setTimeout(resolve, Math.min(Math.max(leftMs, 1_000), 10_000)));
   }
 }, [pruneWindow, effectiveLimit]);
 // Keep the displayed window fresh (a slot frees 60s after its call).
@@ -465,6 +479,7 @@ useEffect(() => {
     planTier?: string | null;
     limitType?: string | null;
     rateLimit?: number | null;
+    rateRemaining?: number | null;
   }
   const renderBatchImages = useCallback(
     async (
@@ -482,10 +497,22 @@ useEffect(() => {
       const headers = { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token };
 
       const tune = (data: RenderBatchData): void => {
+        // A 0-remaining header means Figma's OWN limiter is out of budget
+        // (per-file/burst rules we cannot model) — hard cooldown 60s.
+        if (data.rateRemaining === 0) {
+          const until = Date.now() + 60_000;
+          cooldownUntilRef.current = until;
+          setCooldownUntil(until);
+        }
         if (data.rateLimit && data.rateLimit > 0 && limitOverrideRef.current === null) {
           windowLimitRef.current = data.rateLimit;
         }
         if (data.planTier && data.planTier.trim()) setFigmaTier(data.planTier.trim());
+        // Clear an expired cooldown.
+        if (cooldownUntilRef.current && Date.now() >= cooldownUntilRef.current) {
+          cooldownUntilRef.current = 0;
+          setCooldownUntil(0);
+        }
         refreshWindow();
       };
 
@@ -509,9 +536,14 @@ useEffect(() => {
             });
             setRateLimited(true);
             window.setTimeout(() => setRateLimited(false), Math.max(retryAfter, 5) * 1000 + 5_000);
-            // One graceful retry after Figma's Retry-After window.
+            // Engage the session cooldown: Figma's own window is still hot.
+            const until = Date.now() + (retryAfter + 2) * 1000;
+            cooldownUntilRef.current = until;
+            setCooldownUntil(until);
+            // One graceful retry after Figma's Retry-After window (the retry
+            // is part of the SAME operation — it does not consume a new
+            // window slot, so it is not counted again).
             await new Promise((resolve) => setTimeout(resolve, Math.min(retryAfter, 15) * 1000));
-            bumpApiCalls();
             const retry = await fetch(url, { method: 'POST', headers, body });
             if (retry.ok) {
               const retryData = (await retry.json().catch(() => ({}))) as RenderBatchData;
@@ -731,14 +763,16 @@ useEffect(() => {
       byKey.set(k, list);
     }
     const keys = Array.from(byKey.keys());
-    const limitedKeys = keys.slice(0, MAX_IMAGES_PER_SYNC);
     if (keys.length > MAX_IMAGES_PER_SYNC) {
+      // Miro parity: never partially sync — block the whole action so the
+      // user picks a smaller batch instead of silently skipping frames.
       status(
-        `First ${MAX_IMAGES_PER_SYNC} of ${keys.length} selected frames sync now (community rate-limit cap) — the rest sync on the next press.`,
-        'info'
+        `Cannot sync — ${keys.length} distinct frames selected (cap is ${MAX_IMAGES_PER_SYNC} per press, Miro parity). Select up to ${MAX_IMAGES_PER_SYNC} and sync the rest in the next press.`,
+        'error'
       );
+      return;
     }
-    status(`Syncing ${limitedKeys.length} frame(s)...`, 'progress');
+    status(`Syncing ${keys.length} frame(s)...`, 'progress');
     setIsSyncing(true);
     try {
       // Group by (platform, file, format, scale): same-file Figma frames
@@ -753,7 +787,7 @@ useEffect(() => {
           entries: { nodeId: string; items: SyncedImage[] }[];
         }
       >();
-      for (const key of limitedKeys) {
+      for (const key of keys) {
         const items = byKey.get(key) as SyncedImage[];
         const first = items[0];
         const format = (first.format === 'svg' ? 'svg' : 'png') as 'png' | 'svg';
@@ -1096,6 +1130,7 @@ useEffect(() => {
     figmaTier,
     limitOverride,
     setFigmaWindowOverride,
+    cooldownUntil,
     resetImportState,
   } as const;
 }
