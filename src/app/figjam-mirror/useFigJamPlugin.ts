@@ -237,51 +237,85 @@ export function useFigJamPlugin() {
   // the UI can show live usage and the pacer can wait for a free slot
   // BEFORE issuing a call (no more 429s from normal use).
   const RENDER_WINDOW_MS = 60_000;
-  const RENDER_WINDOW_LIMIT = 10;
-  const apiWindowRef = useRef<number[]>([]);
-  const [rateWindow, setRateWindow] = useState<{ count: number; limit: number }>({ count: 0, limit: RENDER_WINDOW_LIMIT });
-
-  const pruneWindow = useCallback(() => {
-    const now = Date.now();
-    apiWindowRef.current = apiWindowRef.current.filter((t) => now - t < RENDER_WINDOW_MS);
-  }, []);
-
-  const bumpApiCalls = useCallback((n = 1) => {
-    const now = Date.now();
-    pruneWindow();
-    for (let i = 0; i < n; i++) apiWindowRef.current.push(now);
-    setFigmaApiCalls((c) => c + n);
-    setRateWindow({ count: apiWindowRef.current.length, limit: RENDER_WINDOW_LIMIT });
-  }, [pruneWindow]);
-
-  // Wait until a slot frees up in the rolling window (oldest call expires
-  // 60s after it was made). Cap each wait at 10s increments; if the caller
-  // keeps hitting a full window the 429 + Retry-After path still guards.
-  const waitForRateSlot = useCallback(async (): Promise<void> => {
-    pruneWindow();
-    while (apiWindowRef.current.length >= RENDER_WINDOW_LIMIT) {
-      const now = Date.now();
-      const oldest = apiWindowRef.current[0];
-      const waitMs = oldest + RENDER_WINDOW_MS - now;
-      if (waitMs <= 0) break;
-      setRateWindow({ count: apiWindowRef.current.length, limit: RENDER_WINDOW_LIMIT });
-      await new Promise((resolve) => setTimeout(resolve, Math.min(Math.max(waitMs, 5_000), 40_000)));
-      pruneWindow();
+const DEFAULT_WINDOW_LIMIT = 10;
+const windowLimitRef = useRef(DEFAULT_WINDOW_LIMIT);
+const limitOverrideRef = useRef<number | null>(null);
+const apiWindowRef = useRef<number[]>([]);
+const [rateWindow, setRateWindow] = useState<{ count: number; limit: number }>({ count: 0, limit: DEFAULT_WINDOW_LIMIT });
+const [figmaTier, setFigmaTier] = useState<string | null>(null);
+const [limitOverride, setLimitOverrideState] = useState<number | null>(null);
+const effectiveLimit = useCallback((): number => {
+  const overridden = limitOverrideRef.current;
+  return overridden && overridden > 0 ? overridden : windowLimitRef.current;
+}, []);
+const pruneWindow = useCallback(() => {
+  const now = Date.now();
+  apiWindowRef.current = apiWindowRef.current.filter((t) => now - t < RENDER_WINDOW_MS);
+}, []);
+const refreshWindow = useCallback(() => {
+  pruneWindow();
+  setRateWindow({ count: apiWindowRef.current.length, limit: effectiveLimit() });
+}, [pruneWindow, effectiveLimit]);
+const bumpApiCalls = useCallback((n = 1) => {
+  const now = Date.now();
+  pruneWindow();
+  for (let i = 0; i < n; i++) apiWindowRef.current.push(now);
+  setFigmaApiCalls((c) => c + n);
+  refreshWindow();
+}, [pruneWindow, refreshWindow]);
+// Manual override (Settings) — persisted across sessions.
+const setFigmaWindowOverride = useCallback(
+  (n: number | null) => {
+    limitOverrideRef.current = n && n > 0 ? n : null;
+    setLimitOverrideState(n && n > 0 ? n : null);
+    try {
+      if (n && n > 0) localStorage.setItem('sb_figma_window_override', String(n));
+      else localStorage.removeItem('sb_figma_window_override');
+    } catch {
+      // localStorage may be unavailable in embedded WebViews.
     }
-  }, [pruneWindow]);
-
-  // Keep the displayed window fresh (a slot frees 60s after its call).
-  useEffect(() => {
-    const id = window.setInterval(() => {
-      pruneWindow();
-      setRateWindow((prev) =>
-        prev.count === apiWindowRef.current.length
-          ? prev
-          : { count: apiWindowRef.current.length, limit: RENDER_WINDOW_LIMIT }
-      );
-    }, 1_000);
-    return () => window.clearInterval(id);
-  }, [pruneWindow]);
+    refreshWindow();
+  },
+  [refreshWindow]
+);
+// Restore a persisted override on mount.
+useEffect(() => {
+  try {
+    const stored = localStorage.getItem('sb_figma_window_override');
+    if (stored) {
+      const n = Number(stored);
+      if (Number.isFinite(n) && n > 0) {
+        limitOverrideRef.current = n;
+        setLimitOverrideState(n);
+      }
+    }
+  } catch {
+    // ignore
+  }
+  refreshWindow();
+}, [refreshWindow]);
+// Wait until a slot frees up in the rolling window (oldest call expires
+// 60s after it was made). Cap each wait at 40s; if it stays full the
+// 429 + Retry-After path still guards.
+const waitForRateSlot = useCallback(async (): Promise<void> => {
+  pruneWindow();
+  while (apiWindowRef.current.length >= effectiveLimit()) {
+    const now = Date.now();
+    const oldest = apiWindowRef.current[0];
+    const waitMs = oldest + RENDER_WINDOW_MS - now;
+    if (waitMs <= 0) break;
+    setRateWindow({ count: apiWindowRef.current.length, limit: effectiveLimit() });
+    await new Promise((resolve) => setTimeout(resolve, Math.min(Math.max(waitMs, 5_000), 40_000)));
+    pruneWindow();
+  }
+}, [pruneWindow, effectiveLimit]);
+// Keep the displayed window fresh (a slot frees 60s after its call).
+useEffect(() => {
+  const id = window.setInterval(() => {
+    refreshWindow();
+  }, 1_000);
+  return () => window.clearInterval(id);
+}, [refreshWindow]);
   // M3 live-push guard: a selection streamed from Figma does not overwrite a
   // link the user just pasted or a frame they just detected (10s window).
   const lastManualFigSourceRef = useRef(0);
@@ -419,65 +453,95 @@ export function useFigJamPlugin() {
     return () => window.removeEventListener('message', onBridge);
   }, []);
 
-  const renderNode = useCallback(async (fileKey: string, nodeId: string, scale?: number, format?: 'png' | 'svg') => {
-    const token = tokenRef.current;
-    if (!token) throw new Error('Missing Figma connection — connect Figma in Settings.');
-    const scaleSafe = scale ?? 1;
-    const formatSafe = format ?? 'png';
-    const url = '/api/figma/render-batch';
-    const body = JSON.stringify({ fileKey, nodeIds: [nodeId], format: formatSafe, scale: scaleSafe });
-    const headers = { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token };
-    const attempt = async (): Promise<string> => {
-      // Rolling-window pacer: hold back until a 60s slot frees up so normal
-      // use never trips Figma's 10/min Pro limit.
-      await waitForRateSlot();
-      bumpApiCalls();
-      const res = await fetch(url, { method: 'POST', headers, body });
-      if (!res.ok) {
-        const errData = (await res.json().catch(() => ({}))) as {
-          error?: string;
-          retryAfter?: number | null;
-          planTier?: string | null;
-          limitType?: string | null;
-        };
-        const errText = errData.error || `Render HTTP ${res.status}`;
-        const isRate = res.status === 429 || errText.includes('rate_limit_exceeded');
-        let retryAfter = 9;
-        if (isRate) {
-          retryAfter = errData.retryAfter && errData.retryAfter > 0 ? errData.retryAfter : 9;
-          setRateInfo({
-            planTier: String(errData.planTier || 'unknown'),
-            limitType: String(errData.limitType || 'unknown'),
-            retryAfter,
-          });
-          setRateLimited(true);
-          window.setTimeout(() => setRateLimited(false), Math.max(retryAfter, 5) * 1000 + 5_000);
-          // One graceful retry after Figma's Retry-After window.
-          await new Promise((resolve) => setTimeout(resolve, Math.min(retryAfter, 15) * 1000));
-          bumpApiCalls();
-          const retry = await fetch(url, { method: 'POST', headers, body });
-          if (retry.ok) {
-            const data = (await retry.json()) as { images?: Record<string, string | null> };
-            const dataUrl = data.images?.[nodeId];
-            if (dataUrl) return dataUrl;
-          }
+  // One Figma REST call for MANY nodeIds of the same file (the batch
+  // endpoint accepts nodeIds[] — this is the multi-frame sync path, 1 call
+  // per file instead of one per frame). Tunes the rolling-window counter +
+  // tier from rate headers on ANY response (not only 429s), and retries
+  // once after Figma's Retry-After on a 429.
+  interface RenderBatchData {
+    images?: Record<string, string | null>;
+    error?: string;
+    retryAfter?: number | null;
+    planTier?: string | null;
+    limitType?: string | null;
+    rateLimit?: number | null;
+  }
+  const renderBatchImages = useCallback(
+    async (
+      fileKey: string,
+      nodeIds: string[],
+      format?: 'png' | 'svg',
+      scale?: number
+    ): Promise<Record<string, string | null>> => {
+      const token = tokenRef.current;
+      if (!token) throw new Error('Missing Figma connection — connect Figma in Settings.');
+      const scaleSafe = scale ?? 1;
+      const formatSafe = format ?? 'png';
+      const url = '/api/figma/render-batch';
+      const body = JSON.stringify({ fileKey, nodeIds, format: formatSafe, scale: scaleSafe });
+      const headers = { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token };
+
+      const tune = (data: RenderBatchData): void => {
+        if (data.rateLimit && data.rateLimit > 0 && limitOverrideRef.current === null) {
+          windowLimitRef.current = data.rateLimit;
         }
-        throw new Error(
-          isRate
-            ? `Figma is rate-limiting (plan: ${String(errData.planTier || 'unknown')}) — try again in ~${Math.min(
-                retryAfter || 9,
-                15
-              )}s.`
-            : errText
-        );
-      }
-      const data = (await res.json()) as { images?: Record<string, string | null> };
-      const dataUrl = data.images?.[nodeId];
+        if (data.planTier && data.planTier.trim()) setFigmaTier(data.planTier.trim());
+        refreshWindow();
+      };
+
+      const attempt = async (): Promise<Record<string, string | null>> => {
+        // Rolling-window pacer: hold back until a free 60s slot.
+        await waitForRateSlot();
+        bumpApiCalls();
+        const res = await fetch(url, { method: 'POST', headers, body });
+        const data = (await res.json().catch(() => ({}))) as RenderBatchData;
+        tune(data);
+        if (!res.ok) {
+          const errText = data.error || `Render HTTP ${res.status}`;
+          const isRate = res.status === 429 || errText.includes('rate_limit_exceeded');
+          let retryAfter = 9;
+          if (isRate) {
+            retryAfter = data.retryAfter && data.retryAfter > 0 ? data.retryAfter : 9;
+            setRateInfo({
+              planTier: String(data.planTier || 'unknown'),
+              limitType: String(data.limitType || 'unknown'),
+              retryAfter,
+            });
+            setRateLimited(true);
+            window.setTimeout(() => setRateLimited(false), Math.max(retryAfter, 5) * 1000 + 5_000);
+            // One graceful retry after Figma's Retry-After window.
+            await new Promise((resolve) => setTimeout(resolve, Math.min(retryAfter, 15) * 1000));
+            bumpApiCalls();
+            const retry = await fetch(url, { method: 'POST', headers, body });
+            if (retry.ok) {
+              const retryData = (await retry.json().catch(() => ({}))) as RenderBatchData;
+              tune(retryData);
+              if (retryData.images) return retryData.images;
+            }
+          }
+          throw new Error(
+            isRate
+              ? `Figma is rate-limiting (plan: ${String(data.planTier || 'unknown')}) — try again in ~${Math.min(retryAfter || 9, 15)}s.`
+              : errText
+          );
+        }
+        if (!data.images) throw new Error('Figma render returned no images.');
+        return data.images;
+      };
+      return attempt();
+    },
+    [bumpApiCalls, waitForRateSlot, refreshWindow]
+  );
+
+  const renderNode = useCallback(
+    async (fileKey: string, nodeId: string, scale?: number, format?: 'png' | 'svg') => {
+      const images = await renderBatchImages(fileKey, [nodeId], format, scale);
+      const dataUrl = images[nodeId];
       if (!dataUrl) throw new Error('Figma render returned no image for the node.');
       return dataUrl;
-    };
-    return attempt();
-  }, [bumpApiCalls, waitForRateSlot]);
+    },
+    [renderBatchImages]
+  );
 
   const placeOnBoard = useCallback(
     (payload: {
@@ -647,14 +711,18 @@ export function useFigJamPlugin() {
   }, [status]);
 
   // ---- Sync all mirrors ----
+  // Sync = up to MAX_IMAGES_PER_SYNC distinct frame keys per action (Miro
+  // parity — community plans feel render limits hard, so cap the blast
+  // radius and let the rest sync on the next press). Frame keys from the
+  // SAME Figma file are batched into ONE render request (nodeIds[]): a
+  // 3-frame sync of one file costs exactly 1 Figma REST call.
   const syncSelectedScreens = useCallback(async () => {
+    const MAX_IMAGES_PER_SYNC = 3;
     const frames = selectedItems.filter((n) => n.fileKey && n.nodeId);
     if (frames.length === 0) {
       status('Nothing selected on the canvas', 'info');
       return;
     }
-    // One render per unique frame key; update the requested instances
-    // (selected ids, or all copies when the "update all copies" toggle is on).
     const byKey = new Map<string, SyncedImage[]>();
     for (const f of frames) {
       const k = `${f.fileKey}|${f.nodeId}`;
@@ -663,51 +731,118 @@ export function useFigJamPlugin() {
       byKey.set(k, list);
     }
     const keys = Array.from(byKey.keys());
-    status(`Syncing ${keys.length} frame(s)…`, 'progress');
+    const limitedKeys = keys.slice(0, MAX_IMAGES_PER_SYNC);
+    if (keys.length > MAX_IMAGES_PER_SYNC) {
+      status(
+        `First ${MAX_IMAGES_PER_SYNC} of ${keys.length} selected frames sync now (community rate-limit cap) — the rest sync on the next press.`,
+        'info'
+      );
+    }
+    status(`Syncing ${limitedKeys.length} frame(s)...`, 'progress');
     setIsSyncing(true);
-    for (let i = 0; i < keys.length; i++) {
-      const items = byKey.get(keys[i]) as SyncedImage[];
-      const first = items[0];
-      try {
+    try {
+      // Group by (platform, file, format, scale): same-file Figma frames
+      // share ONE batch call; Penpot exports ride the relay (unlimited).
+      const groups = new Map<
+        string,
+        {
+          platform: 'figma' | 'penpot';
+          fileKey: string;
+          format: 'png' | 'svg';
+          scale: number;
+          entries: { nodeId: string; items: SyncedImage[] }[];
+        }
+      >();
+      for (const key of limitedKeys) {
+        const items = byKey.get(key) as SyncedImage[];
+        const first = items[0];
         const format = (first.format === 'svg' ? 'svg' : 'png') as 'png' | 'svg';
         const scale = first.scale ?? 1;
-        let dataUrl = await cachedFetch(
-          `figma|${first.fileKey}|${first.nodeId}|${scale}|${format}`,
-          90_000,
-          () => renderNode(first.fileKey, first.nodeId, scale, format)
-        );
-        // FigJam rejects SVG images — rasterize in the browser first.
-        if (format === 'svg') {
-          dataUrl = await svgToPngDataUrl(dataUrl, scale);
+        const platform = (first.platform ?? 'figma') as 'figma' | 'penpot';
+        const groupKey = `${platform}|${first.fileKey}|${format}|${scale}`;
+        const existing = groups.get(groupKey);
+        if (existing) {
+          existing.entries.push({ nodeId: first.nodeId, items });
+        } else {
+          groups.set(groupKey, {
+            platform,
+            fileKey: first.fileKey,
+            format,
+            scale,
+            entries: [{ nodeId: first.nodeId, items }],
+          });
         }
-        placeOnBoard({
-          fileKey: first.fileKey,
-          nodeId: first.nodeId,
-          name: first.nodeName || first.nodeId,
-          scale,
-          format,
-          platform: (first.platform ?? 'figma') as 'figma' | 'penpot',
-          dataUrl,
-          nodeIds: items.map((it) => it.id).filter((id) => typeof id === 'string' && id.length > 0),
-          allCopies: syncAllCopies,
-          preserveSize,
-        });
-        if (i < keys.length - 1) {
-          status(`Syncing ${i + 1}/${keys.length}…`, 'progress');
-          // Pacing: Figma's REST API rate-limits bursts; keep a short gap
-          // between renders so multi-frame syncs don't trip 429.
-          await new Promise((resolve) => setTimeout(resolve, 700));
-        }
-      } catch (err) {
-        setIsSyncing(false);
-        status(noteError(err), 'error');
-        return;
       }
+      for (const group of groups.values()) {
+        if (group.platform === 'figma') {
+          const nodeIds = group.entries.map((e) => e.nodeId);
+          // ONE Figma REST call for the whole file group.
+          const images = await cachedFetch(
+            `figma-batch|${group.fileKey}|${nodeIds.join('+')}|${group.scale}|${group.format}`,
+            90_000,
+            () => renderBatchImages(group.fileKey, nodeIds, group.format, group.scale)
+          );
+          for (const entry of group.entries) {
+            let dataUrl = images[entry.nodeId];
+            if (!dataUrl) throw new Error(`No render returned for ${entry.nodeId}`);
+            if (group.format === 'svg') {
+              dataUrl = await svgToPngDataUrl(dataUrl, group.scale);
+            }
+            const first = entry.items[0];
+            placeOnBoard({
+              fileKey: group.fileKey,
+              nodeId: entry.nodeId,
+              name: first.nodeName || entry.nodeId,
+              scale: group.scale,
+              format: group.format,
+              platform: 'figma',
+              dataUrl,
+              nodeIds: entry.items.map((it) => it.id).filter((id) => typeof id === 'string' && id.length > 0),
+              allCopies: syncAllCopies,
+              preserveSize,
+            });
+          }
+        } else {
+          // Penpot: export via the relay (not Figma-limited).
+          for (const entry of group.entries) {
+            const exported = await cachedFetch(
+              `penpot|${entry.nodeId}|${group.scale}|${group.format}`,
+              120_000,
+              () => exportPenpotViaRelay(entry.nodeId, group.format, group.scale)
+            );
+            let dataUrl = exported.dataUrl;
+            if (group.format === 'svg') {
+              dataUrl = await svgToPngDataUrl(dataUrl, group.scale, exported.width, exported.height);
+            }
+            const first = entry.items[0];
+            placeOnBoard({
+              fileKey: group.fileKey,
+              nodeId: entry.nodeId,
+              name: first.nodeName || entry.nodeId,
+              scale: group.scale,
+              format: group.format,
+              platform: 'penpot',
+              dataUrl,
+              nodeIds: entry.items.map((it) => it.id).filter((id) => typeof id === 'string' && id.length > 0),
+              allCopies: syncAllCopies,
+              preserveSize,
+            });
+          }
+        }
+        // Breathing room between file groups (plugin-side ops only) —
+        // Figma REST calls are already throttled by the window pacer.
+        await new Promise((resolve) => setTimeout(resolve, 350));
+      }
+    } catch (err) {
+      setIsSyncing(false);
+      status(noteError(err), 'error');
+      return;
     }
     // Re-read the selection so the plugin's updated meta (format/scale)
     // round-trips back into the cards.
     postToPlugin({ action: 'get-selection-state' });
-  }, [selectedItems, cachedFetch, noteError, renderNode, placeOnBoard, status, syncAllCopies, preserveSize]);
+  }, [selectedItems, cachedFetch, noteError, renderBatchImages, placeOnBoard, status, preserveSize, syncAllCopies]);
+
 
   // ---- Replace a selected board node (Import → Replace Selected) ----
   // The plugin reads the CURRENT canvas selection at message time and
@@ -958,6 +1093,9 @@ export function useFigJamPlugin() {
     figmaCacheHits,
     rateInfo,
     rateWindow,
+    figmaTier,
+    limitOverride,
+    setFigmaWindowOverride,
     resetImportState,
   } as const;
 }

@@ -23,6 +23,9 @@ interface SettingsTabProps {
   figmaCacheHits?: number;
   figmaRateInfo?: string | null;
   rateWindow?: { count: number; limit: number };
+  figmaTier?: string | null;
+  limitOverride?: number | null;
+  setFigmaWindowOverride?: (n: number | null) => void;
   availableScales: number[];
   hideMiro?: boolean;
 }
@@ -49,6 +52,9 @@ export function SettingsTab({
   figmaCacheHits = 0,
   figmaRateInfo = null,
   rateWindow = { count: 0, limit: 10 },
+  figmaTier = null,
+  limitOverride = null,
+  setFigmaWindowOverride = () => {},
   availableScales,
   hideMiro = false,
 }: SettingsTabProps) {
@@ -248,6 +254,29 @@ export function SettingsTab({
                   {rateWindow.count}/{rateWindow.limit}
                 </span>{' '}
                 in last 60s (rolling window)
+              </div>
+              <div className="mt-1">
+                plan tier: <span className="text-text-page">{figmaTier || 'unknown'}</span>
+                {figmaTier ? '' : ' (Figma reports it on rate-limit responses)'}
+              </div>
+              <div className="mt-1 flex items-center gap-2">
+                <span className="whitespace-nowrap">window limit:</span>
+                <select
+                  value={limitOverride === null ? 'auto' : String(limitOverride)}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setFigmaWindowOverride(v === 'auto' ? null : Number(v));
+                  }}
+                  className="bg-bg-page border border-border-card rounded px-1 py-0.5 text-[9px] font-mono text-text-page focus:outline-none focus:border-accent"
+                >
+                  <option value="auto">auto</option>
+                  <option value="1">1</option>
+                  <option value="3">3</option>
+                  <option value="5">5</option>
+                  <option value="10">10</option>
+                  <option value="30">30</option>
+                </select>
+                <span className="text-text-muted">calls/min</span>
               </div>
               <div>Served from cache: same frame+scale+format within 90s costs 0 calls.</div>
               {figmaRateInfo ? (

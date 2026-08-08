@@ -16,6 +16,43 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
+// Figma's rate-limit headers are case-insensitive and may use several
+// spellings (X-RateLimit-Limit / X-RateLimit-Remaining / X-RateLimit-Reset
+// per their docs; X-Figma-* appear on 429s). Read the candidates safely.
+function collectRateHeaders(headers: Headers): {
+  limit: number | null;
+  remaining: number | null;
+  reset: number | null;
+  retryAfter: number | null;
+  planTier: string | null;
+  limitType: string | null;
+} {
+  const num = (values: Array<string | null>): number | null => {
+    for (const v of values) {
+      if (v) {
+        const n = Number(v);
+        if (Number.isFinite(n) && n >= 0) return n;
+      }
+    }
+    return null;
+  };
+  const str = (values: Array<string | null>): string | null => {
+    for (const v of values) {
+      if (v && v.trim().length > 0) return v.trim();
+    }
+    return null;
+  };
+  const get = (name: string): string | null => headers.get(name);
+  return {
+    limit: num([get('x-ratelimit-limit'), get('x-figma-limit')]),
+    remaining: num([get('x-ratelimit-remaining'), get('x-figma-remaining')]),
+    reset: num([get('x-ratelimit-reset')]),
+    retryAfter: num([get('retry-after')]),
+    planTier: str([get('x-figma-plan-tier')]),
+    limitType: str([get('x-figma-rate-limit-type')]),
+  };
+}
+
 function normalizeRequestBody(raw: unknown): RenderBatchBody | null {
   if (!isRecord(raw)) return null;
 
@@ -91,10 +128,12 @@ async function handler(request: Request) {
     const figmaDataUnknown: unknown = await figmaResponse.json().catch(() => ({}));
     const figmaData = isRecord(figmaDataUnknown) ? figmaDataUnknown : {};
 
+    // Figma's rate-limit headers (per developers.figma.com/docs/rest-api/
+    // rate-limits/) may arrive on ANY response, not only 429s. Forward them
+    // so the mirror can auto-tune its rolling-window counter (10/min on Pro).
+    const rateHeaders = collectRateHeaders(figmaResponse.headers);
+
     if (!figmaResponse.ok) {
-      const retryAfter = figmaResponse.headers.get('Retry-After');
-      const planTier = figmaResponse.headers.get('X-Figma-Plan-Tier');
-      const limitType = figmaResponse.headers.get('X-Figma-Rate-Limit-Type');
       const errText = typeof figmaData.err === 'string'
         ? figmaData.err
         : typeof figmaData.message === 'string'
@@ -104,9 +143,11 @@ async function handler(request: Request) {
       return NextResponse.json(
         {
           error: errText,
-          retryAfter: retryAfter ? Number(retryAfter) : null,
-          planTier,
-          limitType,
+          retryAfter: rateHeaders.retryAfter ?? null,
+          planTier: rateHeaders.planTier ?? null,
+          limitType: rateHeaders.limitType ?? null,
+          rateLimit: rateHeaders.limit ?? null,
+          rateRemaining: rateHeaders.remaining ?? null,
         },
         { status: figmaResponse.status }
       );

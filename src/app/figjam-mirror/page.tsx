@@ -200,6 +200,9 @@ export default function FigJamPluginPage() {
                 : null
             }
             rateWindow={hook.rateWindow}
+            figmaTier={hook.figmaTier}
+            limitOverride={hook.limitOverride}
+            setFigmaWindowOverride={hook.setFigmaWindowOverride}
           />
         )}
       </section>
