@@ -343,7 +343,7 @@ async function figjamPlace(payload) {
       resultNodes.push(body);
     }
     figma.currentPage.selection = resultNodes;
-    return { ok: true, nodeId: resultNodes[0].id, key: figjamKey(fileKey, nodeId), created: false, updated: resultNodes.length, swap: true };
+    return { ok: true, nodeId: resultNodes[0].id, key: figjamKey(fileKey, nodeId), name: payload.name || '', created: false, updated: resultNodes.length, swap: true };
   }
 
   const rect = figma.createRectangle();
@@ -367,7 +367,7 @@ async function figjamPlace(payload) {
   } catch (e) {}
   figma.currentPage.appendChild(rect);
   figma.currentPage.selection = [rect];
-  return { ok: true, nodeId: rect.id, key: figjamKey(fileKey, nodeId), created: true };
+  return { ok: true, nodeId: rect.id, key: figjamKey(fileKey, nodeId), name: payload.name || '', created: true };
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     return { ok: false, error: `figjam-place failed (${detail})` };
@@ -579,6 +579,7 @@ async function figjamReplace(payload) {
       created: false,
       updated: resultNodes.length,
       swap: true,
+      name: payload.name || '',
     };
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);

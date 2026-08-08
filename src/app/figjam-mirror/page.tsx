@@ -201,8 +201,6 @@ export default function FigJamPluginPage() {
             }
             rateWindow={hook.rateWindow}
             figmaTier={hook.figmaTier}
-            limitOverride={hook.limitOverride}
-            setFigmaWindowOverride={hook.setFigmaWindowOverride}
             cooldownUntil={hook.cooldownUntil}
             rateBudget={hook.rateBudget}
           />

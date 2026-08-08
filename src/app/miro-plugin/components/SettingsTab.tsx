@@ -24,8 +24,6 @@ interface SettingsTabProps {
   figmaRateInfo?: string | null;
   rateWindow?: { count: number; limit: number };
   figmaTier?: string | null;
-  limitOverride?: number | null;
-  setFigmaWindowOverride?: (n: number | null) => void;
   cooldownUntil?: number;
   rateBudget?: { remaining: number | null; resetAt: number | null };
   availableScales: number[];
@@ -55,8 +53,6 @@ export function SettingsTab({
   figmaRateInfo = null,
   rateWindow = { count: 0, limit: 10 },
   figmaTier = null,
-  limitOverride = null,
-  setFigmaWindowOverride = () => {},
   cooldownUntil = 0,
   rateBudget = { remaining: null, resetAt: null },
   availableScales,
@@ -236,18 +232,16 @@ export function SettingsTab({
             />
           </div>
 
-          {/* API-call telemetry — why Figma rate-limits can show up and how
-              many calls each session burns. Renders hit the REST API; cache
-              hits don't. */}
+          {/* API-call telemetry — real session counters, nothing made up. */}
           <div className="p-3 rounded-lg bg-bg-card border border-border-card">
             <span className="text-xs font-semibold text-text-page">Figma API usage (this session)</span>
             <div className="mt-1 font-mono text-[9px] text-text-muted leading-relaxed">
               <div>
-                render calls: <span className="text-text-page">{figmaApiCalls}</span> · cache hits:{' '}
+                renders: <span className="text-text-page">{figmaApiCalls}</span> · from cache:{' '}
                 <span className="text-text-page">{figmaCacheHits}</span>
               </div>
               <div className="mt-1">
-                window usage:{' '}
+                this minute:{' '}
                 <span
                   className={
                     rateWindow.count >= rateWindow.limit
@@ -257,36 +251,17 @@ export function SettingsTab({
                 >
                   {rateWindow.count}/{rateWindow.limit}
                 </span>{' '}
-                in last 60s (rolling window)
+                (rolling window)
               </div>
-              <div className="mt-1">
-                plan tier: <span className="text-text-page">{figmaTier || 'unknown'}</span>
-                {figmaTier ? '' : ' (Figma reports it on rate-limit responses)'}
-              </div>
-              <div className="mt-1 flex items-center gap-2">
-                <span className="whitespace-nowrap">window limit:</span>
-                <select
-                  value={limitOverride === null ? 'auto' : String(limitOverride)}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    setFigmaWindowOverride(v === 'auto' ? null : Number(v));
-                  }}
-                  className="bg-bg-page border border-border-card rounded px-1 py-0.5 text-[9px] font-mono text-text-page focus:outline-none focus:border-accent"
-                >
-                  <option value="auto">auto</option>
-                  <option value="1">1</option>
-                  <option value="3">3</option>
-                  <option value="5">5</option>
-                  <option value="10">10</option>
-                  <option value="30">30</option>
-                </select>
-                <span className="text-text-muted">calls/min</span>
-              </div>
-              <div>Served from cache: same frame+scale+format within 90s costs 0 calls.</div>
+              {figmaTier ? (
+                <div className="mt-1">plan: <span className="text-text-page">{figmaTier}</span></div>
+              ) : null}
               {rateBudget.remaining !== null && (
-                <div className="text-[9px] font-mono text-text-muted mt-1">
-                  Figma says: remaining {rateBudget.remaining}
-                  {rateBudget.resetAt ? ` · resets ${new Date(rateBudget.resetAt * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}` : ''}
+                <div className="mt-1">
+                  Figma reported: remaining {rateBudget.remaining}
+                  {rateBudget.resetAt
+                    ? ` · resets ${new Date(rateBudget.resetAt * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`
+                    : ''}
                 </div>
               )}
               {cooldownUntil > Date.now() ? (
@@ -300,9 +275,7 @@ export function SettingsTab({
                 </div>
               ) : null}
               {figmaRateInfo ? (
-                <div className="text-red-600 dark:text-red-400 mt-1">
-                  rate limit: {figmaRateInfo}
-                </div>
+                <div className="text-red-600 dark:text-red-400 mt-1">rate limit: {figmaRateInfo}</div>
               ) : null}
             </div>
           </div>

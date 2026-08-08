@@ -43,6 +43,8 @@ interface BridgeMsg {
   created?: boolean;
   /** Node-swap fallback fired (component/locked fills couldn't be written; plugin deleted the old node and created a rectangle at the same geometry). */
   swap?: boolean;
+  /** Human-readable frame name from the source (plugin echoes payload.name). */
+  name?: string;
   editorType?: string;
 }
 
@@ -452,12 +454,13 @@ useEffect(() => {
           }
           setIsSyncing(false);
           if (msg.ok) {
+            const displayName = msg.name || msg.key || '';
             setSyncStatus({
               message: msg.created
-                ? `Synced ${msg.key ?? ''}`
+                ? `Synced ${displayName}`
                 : msg.swap
-                  ? `Updated ${msg.key ?? ''} (node swapped — component/locked fills replaced)`
-                  : `Updated ${msg.key ?? ''}`,
+                  ? `Synced ${displayName} — node replaced (old component removed)`
+                  : `Updated ${displayName}`,
               type: msg.swap ? 'info' : 'success',
             });
           } else {
