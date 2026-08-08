@@ -165,6 +165,14 @@ function fillImageMatches(node, newFill) {
 // image" report). Delete the subtree children-first, then the node.
 function removeNodeAndChildren(node) {
   if (!node || typeof node.removed === 'undefined' || node.removed) return;
+  // Instances are atomic: their internals are not re-parentable — removing
+  // the instance itself removes its content (no child traversal needed).
+  if (node.type === 'INSTANCE') {
+    try {
+      node.remove();
+    } catch (e) {}
+    return;
+  }
   const children = node.children || [];
   for (let i = children.length - 1; i >= 0; i--) removeNodeAndChildren(children[i]);
   try {
@@ -176,6 +184,20 @@ function swapTargetParent(node) {
     return node.parent && typeof node.removed !== 'undefined' && !node.removed ? node.parent : null;
   } catch (e) {
     return null;
+  }
+}
+// A node that still carries artwork UNDER its own image surface: a
+// component/instance (its children are component internals and stay
+// visible once an instance fill override is written) or any node with
+// children. Replacing such a node in-place leaves the inner content on
+// top — so these always get the FULL node swap instead of a fill rewrite.
+function nodeLooksLikeArtwork(node) {
+  if (!node) return false;
+  if (node.type === 'COMPONENT' || node.type === 'INSTANCE') return true;
+  try {
+    return !!(node.children && node.children.length > 0);
+  } catch (e) {
+    return false;
   }
 }
 
@@ -280,7 +302,10 @@ async function figjamPlace(payload) {
       const newFill = { type: 'IMAGE', imageHash: image.hash, scaleMode: 'FILL' };
       if (prevTransform) newFill.imageTransform = prevTransform;
       existing.fills = [newFill];
-      if (fillImageMatches(existing, newFill)) {
+      // Components/instances/nodes-with-children can never be replaced in
+      // place — their internals remain visible (the reported overlap).
+      const artSwap = nodeLooksLikeArtwork(existing);
+      if (!artSwap && fillImageMatches(existing, newFill)) {
         try {
           existing.setPluginData(SB_META_KEY, JSON.stringify({
             fileKey: fileKey, nodeId: nodeId, key: figjamKey(fileKey, nodeId),
@@ -495,7 +520,10 @@ async function figjamReplace(payload) {
       const newFill = { type: 'IMAGE', imageHash: image.hash, scaleMode: 'FILL' };
       if (prevTransform) newFill.imageTransform = prevTransform;
       existing.fills = [newFill];
-      if (fillImageMatches(existing, newFill)) {
+      // Components/instances/nodes-with-children can never be replaced in
+      // place — their inner artwork stays visible (the reported overlap).
+      const artSwap = nodeLooksLikeArtwork(existing);
+      if (!artSwap && fillImageMatches(existing, newFill)) {
         try {
           existing.setPluginData(
             SB_META_KEY,
