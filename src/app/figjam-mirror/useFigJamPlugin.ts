@@ -558,7 +558,12 @@ useEffect(() => {
             if (retry.ok) {
               const retryData = (await retry.json().catch(() => ({}))) as RenderBatchData;
               tune(retryData);
-              if (retryData.images) return retryData.images;
+              if (retryData.images) {
+                // Recovery succeeded — Figma is no longer limiting.
+                setRateInfo(null);
+                setRateLimited(false);
+                return retryData.images;
+              }
             }
           }
           throw new Error(
@@ -568,6 +573,10 @@ useEffect(() => {
           );
         }
         if (!data.images) throw new Error('Figma render returned no images.');
+        // A plain success means Figma is NOT limiting — clear stale 429
+        // telemetry so Settings no longer freezes the last retry line.
+        setRateInfo(null);
+        setRateLimited(false);
         return data.images;
       };
       return attempt();
