@@ -159,6 +159,25 @@ function fillImageMatches(node, newFill) {
     return false;
   }
 }
+// Figma re-literally removes the node, its children get REPARENTED to the
+// removed node's parent — a component/instance swap would leave old artwork
+// floating over the new position (the "old content overlapping the synced
+// image" report). Delete the subtree children-first, then the node.
+function removeNodeAndChildren(node) {
+  if (!node || typeof node.removed === 'undefined' || node.removed) return;
+  const children = node.children || [];
+  for (let i = children.length - 1; i >= 0; i--) removeNodeAndChildren(children[i]);
+  try {
+    node.remove();
+  } catch (e) {}
+}
+function swapTargetParent(node) {
+  try {
+    return node.parent && typeof node.removed !== 'undefined' && !node.removed ? node.parent : null;
+  } catch (e) {
+    return null;
+  }
+}
 
 async function figjamPlace(payload) {
   // Whole-body try/catch: FigJam runs this inside the editor and any
@@ -276,7 +295,8 @@ async function figjamPlace(payload) {
       }
       // Cannot edit this node's fills (locked component / other plugin
       // artwork): physically replace the node at its own position.
-      existing.remove();
+      const swapParent = swapTargetParent(existing);
+      removeNodeAndChildren(existing);
       const body = figma.createRectangle();
       body.name = title || prevName;
       const swapW = keepSize ? gw0 : (targetW || gw0);
@@ -294,11 +314,11 @@ async function figjamPlace(payload) {
           platform: payload.platform || 'figma',
         }));
       } catch (e) {}
-      figma.currentPage.appendChild(body);
+      (swapParent || figma.currentPage).appendChild(body);
       resultNodes.push(body);
     }
     figma.currentPage.selection = resultNodes;
-    return { ok: true, nodeId: resultNodes[0].id, key: figjamKey(fileKey, nodeId), created: false, updated: resultNodes.length };
+    return { ok: true, nodeId: resultNodes[0].id, key: figjamKey(fileKey, nodeId), created: false, updated: resultNodes.length, swap: true };
   }
 
   const rect = figma.createRectangle();
@@ -495,7 +515,8 @@ async function figjamReplace(payload) {
         continue;
       }
       // Cannot change this node's fill (locked component) — swap it.
-      existing.remove();
+      const swapParent = swapTargetParent(existing);
+      removeNodeAndChildren(existing);
       const body = figma.createRectangle();
       body.name = payload.name || prevName;
       const swapW = keepSize ? gw0 : (targetW || gw0);
@@ -519,7 +540,7 @@ async function figjamReplace(payload) {
           })
         );
       } catch (e) {}
-      figma.currentPage.appendChild(body);
+      (swapParent || figma.currentPage).appendChild(body);
       resultNodes.push(body);
     }
     figma.currentPage.selection = resultNodes;
@@ -529,6 +550,7 @@ async function figjamReplace(payload) {
       key: figjamKey(fileKey, nodeId),
       created: false,
       updated: resultNodes.length,
+      swap: true,
     };
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);

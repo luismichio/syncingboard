@@ -41,6 +41,8 @@ interface BridgeMsg {
   key?: string;
   error?: string;
   created?: boolean;
+  /** Node-swap fallback fired (component/locked fills couldn't be written; plugin deleted the old node and created a rectangle at the same geometry). */
+  swap?: boolean;
   editorType?: string;
 }
 
@@ -451,8 +453,12 @@ useEffect(() => {
           setIsSyncing(false);
           if (msg.ok) {
             setSyncStatus({
-              message: msg.created ? `Synced ${msg.key ?? ''}` : `Updated ${msg.key ?? ''}`,
-              type: 'success',
+              message: msg.created
+                ? `Synced ${msg.key ?? ''}`
+                : msg.swap
+                  ? `Updated ${msg.key ?? ''} (node swapped — component/locked fills replaced)`
+                  : `Updated ${msg.key ?? ''}`,
+              type: msg.swap ? 'info' : 'success',
             });
           } else {
             setSyncStatus({ message: msg.error || 'Sync failed', type: 'error' });
