@@ -226,10 +226,10 @@ export function SettingsTab({
             <div className="flex flex-col gap-0.5 pr-2">
               <span className="text-xs font-semibold text-text-page">Live Figma selection</span>
               <span className="text-[9px] text-text-muted leading-tight">
-                {rateLimited
-                  ? 'Paused — Figma is rate-limiting.'
-                  : communityPlan
-                    ? 'Requires a Pro plan'
+                {communityPlan
+                  ? null
+                  : rateLimited
+                    ? 'Paused — Figma is rate-limiting'
                     : 'Auto-fill Import from the Figma selection (off by default)'}
               </span>
             </div>
