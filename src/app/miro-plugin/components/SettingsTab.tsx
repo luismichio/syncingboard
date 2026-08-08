@@ -27,6 +27,7 @@ interface SettingsTabProps {
   limitOverride?: number | null;
   setFigmaWindowOverride?: (n: number | null) => void;
   cooldownUntil?: number;
+  rateBudget?: { remaining: number | null; resetAt: number | null };
   availableScales: number[];
   hideMiro?: boolean;
 }
@@ -57,6 +58,7 @@ export function SettingsTab({
   limitOverride = null,
   setFigmaWindowOverride = () => {},
   cooldownUntil = 0,
+  rateBudget = { remaining: null, resetAt: null },
   availableScales,
   hideMiro = false,
 }: SettingsTabProps) {
@@ -281,6 +283,12 @@ export function SettingsTab({
                 <span className="text-text-muted">calls/min</span>
               </div>
               <div>Served from cache: same frame+scale+format within 90s costs 0 calls.</div>
+              {rateBudget.remaining !== null && (
+                <div className="text-[9px] font-mono text-text-muted mt-1">
+                  Figma says: remaining {rateBudget.remaining}
+                  {rateBudget.resetAt ? ` · resets ${new Date(rateBudget.resetAt * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}` : ''}
+                </div>
+              )}
               {cooldownUntil > Date.now() ? (
                 <div className="text-red-600 dark:text-red-400 mt-1">
                   Figma cooldown until{' '}

@@ -179,7 +179,19 @@ async function handler(request: Request) {
     );
 
     const images: Record<string, string | null> = Object.fromEntries(entries);
-    return NextResponse.json({ images });
+// Rate-limit headers ride ANY response (per Figma docs) - forward them so
+// the mirror can pace against Figma's REAL remaining budget, not just its
+// own counter (previously only forwarded on the error branch, causing
+// false "2/10 yet still 429" states).
+return NextResponse.json({
+  images,
+  rateLimit: rateHeaders.limit ?? null,
+  rateRemaining: rateHeaders.remaining ?? null,
+  rateReset: rateHeaders.reset ?? null,
+  retryAfter: rateHeaders.retryAfter ?? null,
+  planTier: rateHeaders.planTier ?? null,
+  limitType: rateHeaders.limitType ?? null,
+});
   } catch {
     return NextResponse.json({ error: 'Internal server error during batch rendering' }, { status: 500 });
   }

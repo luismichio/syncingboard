@@ -247,6 +247,10 @@ const limitOverrideRef = useRef<number | null>(null);
 // cooldown covers everything else.
 const [cooldownUntil, setCooldownUntil] = useState(0);
 const cooldownUntilRef = useRef(0);
+const [rateBudget, setRateBudget] = useState<{ remaining: number | null; resetAt: number | null }>({
+  remaining: null,
+  resetAt: null,
+});
 const apiWindowRef = useRef<number[]>([]);
 const [rateWindow, setRateWindow] = useState<{ count: number; limit: number }>({ count: 0, limit: DEFAULT_WINDOW_LIMIT });
 const [figmaTier, setFigmaTier] = useState<string | null>(null);
@@ -480,6 +484,7 @@ useEffect(() => {
     limitType?: string | null;
     rateLimit?: number | null;
     rateRemaining?: number | null;
+    rateReset?: number | null;
   }
   const renderBatchImages = useCallback(
     async (
@@ -497,12 +502,17 @@ useEffect(() => {
       const headers = { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token };
 
       const tune = (data: RenderBatchData): void => {
-        // A 0-remaining header means Figma's OWN limiter is out of budget
-        // (per-file/burst rules we cannot model) — hard cooldown 60s.
-        if (data.rateRemaining === 0) {
-          const until = Date.now() + 60_000;
-          cooldownUntilRef.current = until;
-          setCooldownUntil(until);
+        // Figma's own budget, when the header rides the response: remaining
+        // 0 = the token/file limiter is out — cooldown until the reset
+        // instant (X-RateLimit-Reset, epoch seconds) or 60s as fallback.
+        if (data.rateRemaining !== undefined && data.rateRemaining !== null) {
+          setRateBudget({ remaining: data.rateRemaining, resetAt: data.rateReset ?? null });
+          if (data.rateRemaining === 0) {
+            const until =
+              data.rateReset && Number(data.rateReset) > 0 ? data.rateReset * 1000 : Date.now() + 60_000;
+            cooldownUntilRef.current = until;
+            setCooldownUntil(until);
+          }
         }
         if (data.rateLimit && data.rateLimit > 0 && limitOverrideRef.current === null) {
           windowLimitRef.current = data.rateLimit;
@@ -764,13 +774,9 @@ useEffect(() => {
     }
     const keys = Array.from(byKey.keys());
     if (keys.length > MAX_IMAGES_PER_SYNC) {
-      // Miro parity: never partially sync — block the whole action so the
-      // user picks a smaller batch instead of silently skipping frames.
-      status(
-        `Cannot sync — ${keys.length} distinct frames selected (cap is ${MAX_IMAGES_PER_SYNC} per press, Miro parity). Select up to ${MAX_IMAGES_PER_SYNC} and sync the rest in the next press.`,
-        'error'
-      );
-      return;
+      // Mirrors Miro's useMiroSync defensive throw — the SyncTab button is
+      // already disabled (banner) above 3 groups; this guards non-UI paths.
+      throw new Error(`Can only sync up to ${MAX_IMAGES_PER_SYNC} different images at once. Deselect some to continue.`);
     }
     status(`Syncing ${keys.length} frame(s)...`, 'progress');
     setIsSyncing(true);
@@ -1131,6 +1137,7 @@ useEffect(() => {
     limitOverride,
     setFigmaWindowOverride,
     cooldownUntil,
+    rateBudget,
     resetImportState,
   } as const;
 }

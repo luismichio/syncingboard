@@ -204,6 +204,7 @@ export default function FigJamPluginPage() {
             limitOverride={hook.limitOverride}
             setFigmaWindowOverride={hook.setFigmaWindowOverride}
             cooldownUntil={hook.cooldownUntil}
+            rateBudget={hook.rateBudget}
           />
         )}
       </section>
