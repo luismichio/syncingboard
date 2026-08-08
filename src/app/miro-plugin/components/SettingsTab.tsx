@@ -62,6 +62,12 @@ export function SettingsTab({
   hideMiro = false,
 }: SettingsTabProps) {
   const [showPairingId, setShowPairingId] = useState(false);
+  // Community gating lives HERE so every consumer (mirror AND Miro sidebar)
+  // resolves it identically: greyed out when the plan is free/Community or
+  // never detectable (undefined/null tier). No per-page wiring can bypass it.
+  const communityPlan =
+    figmaIsCommunity ??
+    (figmaTier === undefined || figmaTier === null || /community|free|starter/i.test(figmaTier));
   return (
     <div className="flex-grow flex flex-col gap-6">
       <div>
@@ -216,21 +222,21 @@ export function SettingsTab({
             </select>
           </div>
 
-          <div className="p-3 rounded-lg bg-bg-card border border-border-card flex justify-between items-center gap-2">
+          <div className={"p-3 rounded-lg bg-bg-card border border-border-card flex justify-between items-center gap-2 " + (communityPlan ? 'opacity-60' : '')}>
             <div className="flex flex-col gap-0.5 pr-2">
               <span className="text-xs font-semibold text-text-page">Live Figma selection</span>
               <span className="text-[9px] text-text-muted leading-tight">
                 {rateLimited
                   ? 'Paused — Figma is rate-limiting. It re-enables in a few seconds.'
-                  : figmaIsCommunity
-                    ? 'Disabled on the Community plan — polling would burn Figma rate budget (Pro accounts auto-enable).'
+                  : communityPlan
+                    ? 'Greyed out — disabled on the Community plan. Polling would burn Figma rate budget; enables automatically on Pro.'
                     : 'Auto-fill Import from the Figma design selection (uses relay quota — off by default)'}
               </span>
             </div>
             <div className="flex flex-col items-center gap-1 shrink-0">
               <div
                 className={
-                  figmaIsCommunity
+                  communityPlan
                     ? 'text-[8px] font-mono text-text-muted/70 border border-border-card rounded px-1 py-0.5'
                     : 'text-[8px] font-mono text-text-muted/0 border border-transparent rounded px-1 py-0.5'
                 }
@@ -241,8 +247,8 @@ export function SettingsTab({
                 type="checkbox"
                 checked={liveFigmaSelection}
                 onChange={(e) => setLiveFigmaSelection(e.target.checked)}
-                disabled={rateLimited || figmaIsCommunity}
-                className={"accent-accent w-3 h-3 cursor-pointer " + (rateLimited || figmaIsCommunity ? 'opacity-40 cursor-not-allowed' : '')}
+                disabled={rateLimited || communityPlan}
+                className={"accent-accent w-3 h-3 cursor-pointer " + (rateLimited || communityPlan ? 'opacity-40 cursor-not-allowed' : '')}
                 aria-label="Live Figma selection"
               />
             </div>
