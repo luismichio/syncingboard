@@ -222,36 +222,37 @@ export function SettingsTab({
             </select>
           </div>
 
-          <div className={"p-3 rounded-lg bg-bg-card border border-border-card flex justify-between items-center gap-2 " + (communityPlan ? 'opacity-60' : '')}>
+          <div
+            className={
+              communityPlan
+                ? 'p-3 rounded-lg bg-bg-card/50 border border-border-card/50 flex justify-between items-center gap-2 opacity-50 select-none'
+                : 'p-3 rounded-lg bg-bg-card border border-border-card flex justify-between items-center gap-2'
+            }
+          >
             <div className="flex flex-col gap-0.5 pr-2">
-              <span className="text-xs font-semibold text-text-page">Live Figma selection</span>
-              <span className="text-[9px] text-text-muted leading-tight">
-                {communityPlan
-                  ? null
-                  : rateLimited
-                    ? 'Paused — Figma is rate-limiting'
-                    : 'Auto-fill Import from the Figma selection (off by default)'}
-              </span>
+              <div className="text-xs font-semibold text-text-page">Live Figma selection</div>
+              {rateLimited ? (
+                <div className="text-[10px] text-text-muted">Paused — Figma is rate limiting</div>
+              ) : communityPlan ? null : (
+                <div className="text-[10px] text-text-muted">
+                  Auto-fill Import from the Figma selection (off by default)
+                </div>
+              )}
             </div>
-            <div className="flex flex-col items-center gap-1 shrink-0">
-              <div
-                className={
-                  communityPlan
-                    ? 'text-[8px] font-mono text-text-muted/70 border border-border-card rounded px-1 py-0.5'
-                    : 'text-[8px] font-mono text-text-muted/0 border border-transparent rounded px-1 py-0.5'
-                }
-              >
-                COMMUNITY
-              </div>
+            {communityPlan ? (
+              <span className="text-[8px] font-mono uppercase tracking-wider text-text-muted/50">
+                Community
+              </span>
+            ) : (
               <input
                 type="checkbox"
                 checked={liveFigmaSelection}
                 onChange={(e) => setLiveFigmaSelection(e.target.checked)}
-                disabled={rateLimited || communityPlan}
-                className={"accent-accent w-3 h-3 cursor-pointer " + (rateLimited || communityPlan ? 'opacity-40 cursor-not-allowed' : '')}
+                disabled={rateLimited}
+                className={"accent-accent w-3 h-3 cursor-pointer " + (rateLimited ? 'opacity-40 cursor-not-allowed' : '')}
                 aria-label="Live Figma selection"
               />
-            </div>
+            )}
           </div>
 
           {/* API-call telemetry — real session counters, nothing made up. */}
