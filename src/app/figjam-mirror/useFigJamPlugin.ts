@@ -247,6 +247,10 @@ const limitOverrideRef = useRef<number | null>(null);
 // cooldown covers everything else.
 const [cooldownUntil, setCooldownUntil] = useState(0);
 const cooldownUntilRef = useRef(0);
+// Ticking seconds-left for the SyncTab gate (Miro parity: button tapers
+// off + "COOLDOWN · Ns"). Previously this returned a hardcoded 0, so the
+// shared SyncTab never greyed the button in the mirror.
+const [cooldownSeconds, setCooldownSeconds] = useState(0);
 const [rateBudget, setRateBudget] = useState<{ remaining: number | null; resetAt: number | null }>({
   remaining: null,
   resetAt: null,
@@ -327,10 +331,20 @@ const waitForRateSlot = useCallback(async (): Promise<void> => {
     await new Promise((resolve) => setTimeout(resolve, Math.min(Math.max(leftMs, 1_000), 10_000)));
   }
 }, [pruneWindow, effectiveLimit]);
-// Keep the displayed window fresh (a slot frees 60s after its call).
+// Keep the displayed window fresh (a slot frees 60s after its call) and
+// tick the cooldownSeconds countdown for the sync gate.
 useEffect(() => {
   const id = window.setInterval(() => {
     refreshWindow();
+    const left =
+      cooldownUntilRef.current > 0
+        ? Math.max(0, Math.ceil((cooldownUntilRef.current - Date.now()) / 1000))
+        : 0;
+    setCooldownSeconds(left);
+    if (cooldownUntilRef.current > 0 && left === 0) {
+      cooldownUntilRef.current = 0;
+      setCooldownUntil(0);
+    }
   }, 1_000);
   return () => window.clearInterval(id);
 }, [refreshWindow]);
@@ -535,10 +549,18 @@ useEffect(() => {
         tune(data);
         if (!res.ok) {
           const errText = data.error || `Render HTTP ${res.status}`;
-          const isRate = res.status === 429 || errText.includes('rate_limit_exceeded');
-          let retryAfter = 9;
+          // OUR own edge/per-endpoint cap (middleware.ts / withRateLimit
+          // return error 'rate_limit_exceeded') — strictly NOT a Figma or
+          // a Penpot limit; surface it as such and never arm Figma states.
+          if (res.status === 429 && errText.trim() === 'rate_limit_exceeded') {
+            const wait = data.retryAfter && data.retryAfter > 0 ? Math.ceil(data.retryAfter) : 10;
+            throw new Error(
+              `SyncingBoard server is momentarily at its own safety cap (per-IP) — wait ${wait}s and retry. This is neither Figma nor Penpot limiting.`
+            );
+          }
+          const isRate = res.status === 429;
           if (isRate) {
-            retryAfter = data.retryAfter && data.retryAfter > 0 ? data.retryAfter : 9;
+            const retryAfter = data.retryAfter && data.retryAfter > 0 ? data.retryAfter : 9;
             setRateInfo({
               planTier: String(data.planTier || 'unknown'),
               limitType: String(data.limitType || 'unknown'),
@@ -546,29 +568,19 @@ useEffect(() => {
             });
             setRateLimited(true);
             window.setTimeout(() => setRateLimited(false), Math.max(retryAfter, 5) * 1000 + 5_000);
-            // Engage the session cooldown: Figma's own window is still hot.
+            // Engage the session cooldown; the Sync button tapers the
+            // countdown. Miro parity: we do NOT auto-retry on a 429 — the
+            // action errors out, Figma's Retry-After drives the cooldown.
             const until = Date.now() + (retryAfter + 2) * 1000;
             cooldownUntilRef.current = until;
             setCooldownUntil(until);
-            // One graceful retry after Figma's Retry-After window (the retry
-            // is part of the SAME operation — it does not consume a new
-            // window slot, so it is not counted again).
-            await new Promise((resolve) => setTimeout(resolve, Math.min(retryAfter, 15) * 1000));
-            const retry = await fetch(url, { method: 'POST', headers, body });
-            if (retry.ok) {
-              const retryData = (await retry.json().catch(() => ({}))) as RenderBatchData;
-              tune(retryData);
-              if (retryData.images) {
-                // Recovery succeeded — Figma is no longer limiting.
-                setRateInfo(null);
-                setRateLimited(false);
-                return retryData.images;
-              }
-            }
+            throw new Error(
+              `Figma is rate-limiting (plan: ${String(data.planTier || 'unknown')}) — the button tapers and re-arms in ~${Math.min(retryAfter || 9, 15)}s.`
+            );
           }
           throw new Error(
-            isRate
-              ? `Figma is rate-limiting (plan: ${String(data.planTier || 'unknown')}) — try again in ~${Math.min(retryAfter || 9, 15)}s.`
+            errText.includes('rate_limit_exceeded')
+              ? `SyncingBoard server cap briefly hit (error: rate_limit_exceeded) — wait a few seconds and retry.`
               : errText
           );
         }
@@ -1131,7 +1143,7 @@ useEffect(() => {
     propagate,
     setPropagate,
     applyGroupSettings,
-    cooldownSeconds: 0,
+    cooldownSeconds,
     isAnyImageSelected: selectedItems.length > 0 || foreignSelection.length > 0,
     replaceSelectedWidget,
     pairingId,

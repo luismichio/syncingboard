@@ -13,7 +13,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-const GLOBAL_CATCH_ALL_LIMIT = 60; // requests per minute per IP
+const GLOBAL_CATCH_ALL_LIMIT = 240; // requests per minute per IP
 const GLOBAL_CATCH_ALL_WINDOW = 60; // seconds
 
 export async function middleware(request: NextRequest) {
