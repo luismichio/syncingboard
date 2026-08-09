@@ -129,6 +129,44 @@ export default function RootLayout({
         <script
           dangerouslySetInnerHTML={{
             __html: `
+              (function () {
+                // Miro SDK — load ONLY when this page is embedded under a Miro
+                // origin. Miro requires its own app iframe(s) (headless +
+                // panel) to carry miro.js; loading it globally made every
+                // non-Miro surface (FigJam, dashboard, docs, marketing
+                // tabs) boot the SDK and throw "SdkConnectionError."
+                // Detection is layer-of-ancestry based (official Miro
+                // iframe model), NOT "am I an iframe": the FigJam plugin
+                // webview is also an iframe but its ancestors are Figma, so
+                // it correctly skips the SDK.
+                function inMiro() {
+                  try {
+                    var ao = window.location.ancestorOrigins;
+                    if (ao && ao.length) {
+                      for (var i = 0; i < ao.length; i++) {
+                        if (/(^|\.)(miro\.com|miro-app\.com)$/.test(String(ao[i]))) return true;
+                      }
+                    }
+                  } catch (e) {}
+                  try {
+                    var ref = String(document.referrer || '');
+                    if (/^https:\/\/([a-z0-9-]+\.)*(miro\.com|miro-app\.io)\//.test(ref)) return true;
+                  } catch (e) {}
+                  return false;
+                }
+                if (inMiro()) {
+                  var s = document.createElement('script');
+                  s.src = 'https://miro.com/app/static/sdk/v2/miro.js';
+                  document.head.appendChild(s);
+                }
+              })();
+            `,
+          }}
+        />
+
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
               (function() {
                 try {
                   const saved = localStorage.getItem('theme');
