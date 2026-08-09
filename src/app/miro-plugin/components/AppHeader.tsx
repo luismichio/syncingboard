@@ -21,7 +21,7 @@ export function AppHeader({ tokensLoading, figmaToken, miroToken, hideMiro = fal
         />
         <div>
           <h2 className="text-xl font-bold tracking-tight text-accent leading-none">SyncingBoard</h2>
-          <p className="text-[10px] text-text-muted mt-0.5">Stateless Design-Miro Pipeline</p>
+          <p className="text-[10px] text-text-muted mt-0.5">Stateless Design-Board Pipeline</p>
         </div>
       </div>
 

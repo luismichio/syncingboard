@@ -67,7 +67,8 @@ export function useFigmaImporter(
   };
 
   const detectLocalFigmaSelection = async () => {
-    setIsDetectingLocal(true);
+    setIsDetectingLocal(true);
+    setSyncStatusParent('Waiting for the Figma Companion — select a frame in Figma…', 'progress');
     
     const useTauri = typeof window !== 'undefined' && localStorage.getItem('syncingboard_use_tauri') === 'true';
     if (useTauri) {

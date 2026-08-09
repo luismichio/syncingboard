@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useAuthTokens } from './useAuthTokens';
 import { useMiroSelection } from './useMiroSelection';
 import { useFigmaImporter } from './useFigmaImporter';
@@ -21,18 +21,14 @@ export interface SyncStatus {
  * Integrates single-responsibility sub-hooks (Figma & Penpot) to provide a unified API.
  */
 export function useMiroPlugin(propagate: boolean = false, preserveSize: boolean = false) {
-  const [isInitMode, setIsInitMode] = useState<boolean | null>(null);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-
-    const rafId = window.requestAnimationFrame(() => {
-      const params = new URLSearchParams(window.location.search);
-      setIsInitMode(params.get('init') === 'true');
-    });
-
-    return () => window.cancelAnimationFrame(rafId);
-  }, []);
+  const [isInitMode] = useState<boolean | null>(() => {
+    // Synchronous lazy init: hidden/headless iframes (Miro) pause
+    // requestAnimationFrame, and a deferred effect set would be cancelled by
+    // React 19 Strict Mode cleanup, leaving isInitMode null forever (no
+    // toolbar icon, dead app).
+    if (typeof window === 'undefined') return null;
+    return new URLSearchParams(window.location.search).get('init') === 'true';
+  });
 
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
@@ -83,10 +79,8 @@ export function useMiroPlugin(propagate: boolean = false, preserveSize: boolean 
 
   // 4. Penpot Importer Hook
   const {
-    penpotInput,
     penpotNodeInfo,
     isDetectingLocal: isDetectingPenpotLocal,
-    parsePenpotLink,
     detectLocalPenpotSelection,
     importPenpotScreen,
   } = usePenpotImporter(miroToken, setIsSyncing, updateSyncStatus);
@@ -295,10 +289,8 @@ export function useMiroPlugin(propagate: boolean = false, preserveSize: boolean 
     detectLocalFigmaSelection,
     importFigmaScreen,
     // Penpot importer
-    penpotInput,
     penpotNodeInfo,
     isDetectingPenpotLocal,
-    parsePenpotLink,
     detectLocalPenpotSelection,
     importPenpotScreen,
     // Sync

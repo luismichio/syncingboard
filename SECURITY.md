@@ -11,8 +11,8 @@ We actively monitor and patch security vulnerabilities in SyncingBoard. Security
 
 | Version  | Supported       |
 | -------- | --------------- |
-| < 0.15.x | No              |
-| 0.15.x   | Yes ✅          |
+| 0.16.x   | Yes ✅          |
+| < 0.16.x | No              |
 
 Always ensure you are running the latest release to receive active security updates.
 
@@ -27,13 +27,13 @@ SyncingBoard is designed with a **zero-persistent-storage, cloud-relay-first** a
 - **OAuth tokens are stored in Miro board storage** (via `board.storage.set`), with a **localStorage fallback** for same-origin contexts. Tokens are never persisted server-side beyond an ephemeral Upstash Redis cache (300s TTL) used only during OAuth popup handoff.
 - Token refresh uses an ephemeral Upstash Redis cache (300s TTL) with automatic deletion on consumption — no long-lived token storage on the server.
 - **OAuth CSRF protection** via cryptographically secure `state` parameters generated with `window.crypto.getRandomValues()`. State values are validated server-side before accepting the callback.
-- **Pairing IDs** (Penpot ↔ Miro link) are read-only fields in the UI, generated via crypto-secure randomness (`crypto.randomUUID`), so users cannot inject custom values. **They are bearer access keys:** anyone who holds an ID can read from an open, connected Figma/Penpot companion. For **Penpot** the pairing ID is the *only* credential (no OAuth); for **Figma**, imports and syncs additionally require the user's own Figma OAuth. Treat IDs like secrets, use one per board/companion pair, and disconnect companions when done — see `doc/setup.md` "Security & Pairing Best Practices". An optional per-pairing passphrase (PIN) to protect sensitive pairings is **planned** for a future release.
+- **Pairing IDs** (design-source ↔ whiteboard link, incl. the FigJam app) are read-only fields in the UI, generated client-side via crypto-secure randomness (`window.crypto.getRandomValues()`, per `src/lib/sync/pairingId.ts`, `sb_` + 16 chars), so users cannot inject custom values. **They are bearer access keys:** anyone who holds an ID can read from an open, connected Figma/Penpot companion. For **Penpot** the pairing ID is the *only* credential (no OAuth); for **Figma**, imports and syncs additionally require the user's own Figma OAuth. Treat IDs like secrets, use one per board/companion pair, and disconnect companions when done — see `doc/setup.md` "Security & Pairing Best Practices". An optional per-pairing passphrase (PIN) to protect sensitive pairings is **planned** for a future release.
 
 ### API Protection
 
 - **Community Plan rate limiting** — per-user token-based throttling on all sync endpoints. Identifiers are hashed with SHA-256 to avoid storing raw tokens in rate-limit counters. A global daily backstop (500 syncs/day) prevents free-tier budget exhaustion regardless of attacker IP cycling.
-- **Token-based identification** — rate limit keys use `SHA256(OAuth token)` or `SHA256(pairingId)` instead of client IP, making the limiter immune to VPN/proxy cycling. IP fallback only applies to unauthenticated requests (tightly capped at 5 req/min).
-- **CORS origin whitelisting** on all API routes — only trusted domains (`https://syncingboard.com`, `http://localhost:3000`) are permitted.
+- **Token-based identification** — rate limit keys use `SHA256(OAuth token)` or `SHA256(pairingId)` instead of client IP, making the limiter immune to VPN/proxy cycling. IP-level fallback: the edge middleware applies a global catch-all (240 requests/minute per IP) across `/api/*`, so unauthenticated or IP-based traffic is still bounded when token hashing is not available.
+- **Host-derived OAuth redirects** — OAuth auth/callback URLs are built from the incoming request Host header (normalized; `syncingboard.com` → `www.syncingboard.com`) and bound to the initiating window via CSRF `state` validated server-side before any token exchange. Cross-origin companions communicate over the Ably relay on explicit pairing channels (`figma:`/`penpot:`), never through permissive API CORS.
 - **Generic error responses** — API endpoints sanitize exceptions to avoid leaking stack traces or internal paths to clients.
 - **Orphan endpoint cleanup** — unused relay routes (`/api/relay/penpot/poll`, `/api/relay/penpot/register`) have been removed to reduce the attack surface.
 
@@ -47,6 +47,8 @@ SyncingBoard is designed with a **zero-persistent-storage, cloud-relay-first** a
 
 - Legacy Tauri bridge routes (WebSocket, local polling, local export triggers) have been pruned — the desktop app now only serves the capability-extender role.
 - Temporary/scratch files (`.html` stubs, `.txt` notes) are excluded from production builds.
+- **Miro SDK is origin-gated** — miro.js loads only when the page is embedded under a Miro origin (`location.ancestorOrigins` ending in `miro.com`/`miro-app.io`, with a `document.referrer` fallback); the FigJam app, dashboard, docs, and marketing tabs never receive the SDK.
+- **FigJam app is destination-only** — it subscribes as a read-only client on `figma:<pairing>` channels and never registers in the source presence set, so it can never impersonate a design-source companion.
 
 ---
 

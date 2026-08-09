@@ -14,7 +14,7 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title: "SyncingBoard",
     description:
-      "SyncingBoard is a stateless, self-hosted integration that syncs Figma and Penpot frame screenshots into Miro in-place with zero duplicates.",
+      "SyncingBoard is a stateless, self-hosted integration that syncs Figma and Penpot frame screenshots into Miro or FigJam in-place with zero duplicates.",
     icons: {
       icon: "/syncingboard_logo.svg",
     },
@@ -26,9 +26,9 @@ export async function generateMetadata(): Promise<Metadata> {
       type: "website",
       locale: "en_US",
       siteName: "SyncingBoard",
-      title: "SyncingBoard — Stateless Figma/Penpot-Miro Pipeline",
+      title: "SyncingBoard — Stateless Design-Board Pipeline",
       description:
-        "A database-free, self-hosted integration that syncs Figma and Penpot frame screenshots into Miro in-place with zero duplicates.",
+        "A database-free, self-hosted integration that syncs Figma and Penpot frame screenshots into Miro or FigJam in-place with zero duplicates.",
       url: SITE_URL,
       images: [
         {
@@ -41,9 +41,9 @@ export async function generateMetadata(): Promise<Metadata> {
     },
     twitter: {
       card: "summary_large_image",
-      title: "SyncingBoard — Stateless Figma/Penpot-Miro Pipeline",
+      title: "SyncingBoard — Stateless Design-Board Pipeline",
       description:
-        "A database-free, self-hosted integration that syncs Figma and Penpot frame screenshots into Miro in-place with zero duplicates.",
+        "A database-free, self-hosted integration that syncs Figma and Penpot frame screenshots into Miro or FigJam in-place with zero duplicates.",
       images: ["/syncingboard_logo_color.svg"],
     },
     keywords: [
@@ -119,7 +119,7 @@ export default function RootLayout({
               name: "SyncingBoard",
               url: SITE_URL,
               description:
-                "A stateless, self-hosted integration that syncs Figma and Penpot frame screenshots into Miro in-place with zero duplicates.",
+                "A stateless, self-hosted integration that syncs Figma and Penpot frame screenshots into Miro or FigJam in-place with zero duplicates.",
               applicationCategory: "DesignApplication",
               operatingSystem: "All",
             }),

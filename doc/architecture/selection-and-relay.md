@@ -33,11 +33,15 @@ The Relay Architecture combines two complementary cloud infrastructure component
 * **Figma Companion (`public/figma-companion-ui.html`):** Connects via WebSocket (Ably), subscribes to the pairing channel (`penpot:${pairingId}`) for `select` commands, retrieves selected frame metadata via `figma.root.getPluginData`, and publishes selection details directly over Ably to Miro with zero server polling and zero Redis commands.
 * **Penpot Companion (`public/penpot-companion-ui.html`):** Connects via WebSocket (Ably), subscribes to the pairing channel for `select` or `export` commands, executes them using Penpot's native plugin API, and returns selection results directly over Ably or uploads heavy image buffers to Vercel/Redis with a `'result-ready'` Ably event.
 
+### FigJam App (M3 Destination Pull)
+
+The FigJam app is a destination, not a source: "Detect Selection in Figma" pulls the **active Figma design-file selection** over the `figma:<pairing>` channel (`callRelay` → `select`), and the Figma design companion streams every `selectionchange` live so the app's Import card fills as the designer clicks around the file. The app subscribes as a **subscribe-only** client — it never registers in the source presence set, so server-side companion detection is unaffected. `subscribeRelayLive()` keeps the Ably connection open while subscribed and releases it on unmount.
+
 ---
 
 ## Cryptographically Secure Pairing IDs & UI Masking
 
-* **Cryptographically Secure Keys (`src/lib/pairingId.ts`):** Pairing IDs are 16-character unguessable alphanumeric keys (`sb_` + 16 random chars) generated using `window.crypto.getRandomValues()`.
+* **Cryptographically Secure Keys (`src/lib/sync/pairingId.ts`):** Pairing IDs are 16-character unguessable alphanumeric keys (`sb_` + 16 random chars) generated using `window.crypto.getRandomValues()`.
 * **Password-Style UI Masking:** In the Miro plugin Settings tab, pairing IDs are password-masked (`●●●●●●●●`) by default to prevent shoulder-surfing during screen recordings or streams.
 * **Instant Rotation (`rotatePairingId()`):** Provides a one-click key rotation button in the Settings panel that generates a fresh pairing ID and updates stored client state instantly.
 

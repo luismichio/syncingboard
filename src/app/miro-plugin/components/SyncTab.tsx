@@ -44,7 +44,7 @@ export function SyncTab({
     <div className="flex-grow flex flex-col justify-between">
       <div className="space-y-3">
         <h4 className="text-[10px] uppercase font-mono tracking-widest text-text-muted">
-          {mirrorMode ? 'Selected FigJam Mirrors' : 'Selected Canvas Screens'}
+          {mirrorMode ? 'Selected FigJam Items' : 'Selected Canvas Screens'}
 {!hasMiroToken && (
   <div className="p-3 rounded-md border border-amber-500/40 flex flex-col gap-1">
     <span className="text-[9px] font-mono text-text-muted leading-tight">
@@ -92,12 +92,25 @@ export function SyncTab({
                         </button>
                       )}
                     </div>
-                    <span className="text-[9px] font-mono text-text-muted truncate">
-                      ID: {group.nodeId}
-                    </span>
+                    {group.url ? (
+                      <a
+                        href={group.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[9px] font-mono text-text-muted hover:text-accent truncate cursor-pointer"
+                        title={`Open in source app — ${group.url}`}
+                      >
+                        ID: {group.nodeId} ↗
+                      </a>
+                    ) : (
+                      <span className="text-[9px] font-mono text-text-muted truncate">
+                        ID: {group.nodeId}
+                      </span>
+                    )}
                   </div>
 
                   <div className="flex gap-2 mt-1 pt-2 border-t border-border-card/30">
+                    {!mirrorMode && (
                     <div className="flex-1 flex flex-col gap-0.5">
                       <span className="text-[8px] font-mono text-text-muted uppercase tracking-wider">Format</span>
                       <select
@@ -109,8 +122,9 @@ export function SyncTab({
                         <option value="svg">SVG</option>
                       </select>
                     </div>
+                    )}
 
-                    {group.format === 'png' && (
+                    {(mirrorMode || group.format === 'png') && (
                       <div className="flex-1 flex flex-col gap-0.5">
                         <span className="text-[8px] font-mono text-text-muted uppercase tracking-wider">Scale</span>
                         <select
@@ -154,7 +168,7 @@ export function SyncTab({
                 </span>
               </div>
               <p className="ml-5 text-[8px] font-mono text-text-muted/50 leading-tight">
-                {mirrorMode ? 'Crop locked.' : 'Size locked. Crop resets — Miro API limitation.'}
+                {mirrorMode ? 'Dimension and Crop locked.' : 'Size locked. Crop resets — Miro API limitation.'}
               </p>
             </label>
 
@@ -170,7 +184,9 @@ export function SyncTab({
                   className="accent-accent w-3 h-3"
                 />
                 <span className="text-[10px] text-text-muted font-mono">
-                  Propagate format &amp; scale to all copies
+                  {mirrorMode
+                    ? 'Propagate scale to all copies'
+                    : 'Propagate format &amp; scale to all copies'}
                 </span>
               </label>
             )}
@@ -201,7 +217,7 @@ export function SyncTab({
         ) : (
           <div className="p-8 rounded-md border border-dashed border-border-card text-center text-xs text-text-muted py-12">
             {mirrorMode
-              ? 'Select FigJam mirrors on the board to update them in place — or place one in Import first.'
+              ? 'Select FigJam shapes on the board to update them in place — or place one in Import first.'
               : 'Select one or more Figma or Penpot screenshots on the board canvas to update them in-place.'}
           </div>
         )}

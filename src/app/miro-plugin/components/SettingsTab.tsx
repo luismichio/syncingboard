@@ -16,14 +16,6 @@ interface SettingsTabProps {
   useTauri: boolean;
   defaultPngScale: number;
   onDefaultPngScaleChange: (value: number) => void;
-  rateLimited?: boolean;
-  figmaApiCalls?: number;
-  figmaCacheHits?: number;
-  figmaRateInfo?: string | null;
-  rateWindow?: { count: number; limit: number };
-  figmaTier?: string | null;
-  cooldownUntil?: number;
-  rateBudget?: { remaining: number | null; resetAt: number | null };
   availableScales: number[];
   hideMiro?: boolean;
 }
@@ -43,14 +35,6 @@ export function SettingsTab({
   useTauri,
   defaultPngScale,
   onDefaultPngScaleChange,
-  rateLimited = false,
-  figmaApiCalls = 0,
-  figmaCacheHits = 0,
-  figmaRateInfo = null,
-  rateWindow = { count: 0, limit: 10 },
-  figmaTier = null,
-  cooldownUntil = 0,
-  rateBudget = { remaining: null, resetAt: null },
   availableScales,
   hideMiro = false,
 }: SettingsTabProps) {
@@ -180,7 +164,12 @@ export function SettingsTab({
               </button>
             </div>
             <p className="text-[9px] text-text-muted leading-tight mt-0.5">
-              Paste this pairing ID inside the Penpot Companion Plugin to link Miro and Penpot.
+              {hideMiro
+                ? 'Paste this pairing ID inside the Penpot Companion Plugin to link FigJam and Penpot.'
+                : 'Paste this pairing ID inside the Penpot Companion Plugin to link Miro and Penpot.'}
+            </p>
+            <p className="text-[9px] text-text-muted leading-tight mt-0.5">
+              Also needed to detect your selection in the Figma app (Figma Companion uses the same pairing ID).
             </p>
             <p className="text-[9px] text-text-muted leading-tight mt-0.5">
               {useTauri
@@ -209,53 +198,6 @@ export function SettingsTab({
             </select>
           </div>
 
-          {/* API-call telemetry — real session counters, nothing made up. */}
-          <div className="p-3 rounded-lg bg-bg-card border border-border-card">
-            <span className="text-xs font-semibold text-text-page">Figma API usage (this session)</span>
-            <div className="mt-1 font-mono text-[9px] text-text-muted leading-relaxed">
-              <div>
-                renders: <span className="text-text-page">{figmaApiCalls}</span> · from cache:{' '}
-                <span className="text-text-page">{figmaCacheHits}</span>
-              </div>
-              <div className="mt-1">
-                this minute:{' '}
-                <span
-                  className={
-                    rateWindow.count >= rateWindow.limit
-                      ? 'text-red-600 dark:text-red-400'
-                      : 'text-text-page'
-                  }
-                >
-                  {rateWindow.count}/{rateWindow.limit}
-                </span>{' '}
-                (rolling window)
-              </div>
-              {figmaTier ? (
-                <div className="mt-1">plan: <span className="text-text-page">{figmaTier}</span></div>
-              ) : null}
-              {rateBudget.remaining !== null && (
-                <div className="mt-1">
-                  Figma reported: remaining {rateBudget.remaining}
-                  {rateBudget.resetAt
-                    ? ` · resets ${new Date(rateBudget.resetAt * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`
-                    : ''}
-                </div>
-              )}
-              {cooldownUntil > Date.now() ? (
-                <div className="text-red-600 dark:text-red-400 mt-1">
-                  Figma cooldown until{' '}
-                  {new Date(cooldownUntil).toLocaleTimeString([], {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                    second: '2-digit',
-                  })}
-                </div>
-              ) : null}
-              {figmaRateInfo ? (
-                <div className="text-red-600 dark:text-red-400 mt-1">rate limit: {figmaRateInfo}</div>
-              ) : null}
-            </div>
-          </div>
 
           <div className="p-3 rounded-lg bg-bg-card border border-border-card flex justify-between items-center">
             <span className="text-xs font-semibold text-text-page">Theme Select</span>

@@ -563,7 +563,7 @@
       // always, SVG exports when the serialized JSON is compact (< 12KB).
       // PNG/base64 and large payloads stay on the HTTP + Redis path.
       const payloadSize = data ? JSON.stringify(data).length : 0;
-      const canInline = data && !data.base64 && (!data.svg || payloadSize < 12000);
+      const canInline = !data || (!data.base64 && (!data.svg || payloadSize < 12000));
       if (canInline && ablyChannel) {
         try {
           await ablyChannel.publish('result', { requestId, data, error });

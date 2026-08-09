@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { parsePenpotUrl } from '@/lib/sync/penpotUrlParser';
 import { callPenpotMcpTool, callRelay, getOrCreatePairingId } from '@/lib/sync/companionRelayClient';
 import { decodeHtmlEntities } from '@/lib/decodeHtmlEntities';
 import { MiroAdapter } from './MiroAdapter';
@@ -11,7 +10,7 @@ export interface PenpotNodeInfo {
 }
 
 /**
- * Handles Penpot design URL validation, selection detection via Penpot Companion relay,
+ * Handles Penpot selection detection via Penpot Companion relay,
  * and vector asset canvas placement task.
  * Saves Penpot configuration and platform metadata in the Miro image widget.
  */
@@ -20,27 +19,12 @@ export function usePenpotImporter(
   setIsSyncingParent: (val: boolean) => void,
   setSyncStatusParent: (val: string, type?: 'success' | 'error' | 'progress' | 'info') => void
 ) {
-  const [penpotInput, setPenpotInput] = useState<string>('');
   const [penpotNodeInfo, setPenpotNodeInfo] = useState<PenpotNodeInfo | null>(null);
   const [isDetectingLocal, setIsDetectingLocal] = useState<boolean>(false);
 
-  const parsePenpotLink = (url: string) => {
-    setPenpotInput(url);
-    const parsed = parsePenpotUrl(url);
-    if (parsed) {
-      setPenpotNodeInfo({
-        fileId: parsed.fileId,
-        objectId: parsed.objectId,
-        name: 'Selected Frame',
-      });
-      setSyncStatusParent('Valid Penpot link detected.');
-    } else {
-      setPenpotNodeInfo(null);
-    }
-  };
-
   const detectLocalPenpotSelection = async () => {
     setIsDetectingLocal(true);
+    setSyncStatusParent('Waiting for the Penpot Companion — select a frame in Penpot…', 'progress');
 
     try {
       const pairingId = getOrCreatePairingId();
@@ -216,10 +200,8 @@ export function usePenpotImporter(
   };
 
   return {
-    penpotInput,
     penpotNodeInfo,
     isDetectingLocal,
-    parsePenpotLink,
     detectLocalPenpotSelection,
     importPenpotScreen,
   };

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>SyncingBoard · FigJam Mirror</title>
+<title>SyncingBoard · FigJam</title>
 <style>
   :root{
     --bg:#0b0c0d; --surface:#121417; --border:#232833; --text:#f3f4f6;
@@ -55,7 +55,7 @@
 <body>
 <div class="app">
   <header>
-    <div class="logo"><span class="dot"></span>FigJam Mirror<small>SyncingBoard</small></div>
+    <div class="logo"><span class="dot"></span>FigJam<small>SyncingBoard</small></div>
     <span id="status" class="status-pill"><span class="dot"></span>Idle</span>
   </header>
 
@@ -65,11 +65,11 @@
       <input type="text" id="pairing-id" placeholder="sb_xxxxx" spellcheck="false" />
       <button id="copy-btn" type="button">Copy</button>
     </div>
-    <div class="hint">Share this key with the Figma companion that owns the design file. The companion publishes renders to this pairing channel and this FigJam mirror applies them on the board (in-place, no duplicates).</div>
+    <div class="hint">Share this key with the Figma companion that owns the design file. The companion publishes renders to this pairing channel and this FigJam app applies them on the board (in-place, no duplicates).</div>
   </div>
 
   <div class="card">
-    <div class="hint" style="margin-top:0">On the board, select a Figma-mirrored Rectangle to make it the active sync target, or detect it below.</div>
+    <div class="hint" style="margin-top:0">On the board, select a synced Rectangle to make it the active sync target, or detect it below.</div>
     <button id="detect-btn" class="primary" type="button">Detect selection</button>
     <div id="selection" class="hint" style="margin-top:6px">No selection yet.</div>
   </div>
@@ -84,7 +84,7 @@
       <input type="text" id="node-name" placeholder="display name" style="flex:1" />
       <input type="number" id="scale" value="1" min="1" max="4" style="width:64px" title="scale" />
     </div>
-    <div class="hint">Sync places / in-place updates the tracked Rectangle for that figure. When the companion pushes a render for the same node id, the mirror re-uses the node and swaps its image (no duplicates).</div>
+    <div class="hint">Sync places / in-place updates the tracked Rectangle for that figure. When the companion pushes a render for the same node id, the app re-uses the node and swaps its image (no duplicates).</div>
   </div>
 
   <div class="card">

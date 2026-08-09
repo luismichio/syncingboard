@@ -10,4 +10,5 @@ export interface GroupedSyncedImage {
   scale: number;
   widgets: { id: string }[];
   platform: 'figma' | 'penpot';
+  url?: string;
 }

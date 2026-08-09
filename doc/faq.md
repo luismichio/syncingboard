@@ -64,6 +64,9 @@ SyncingBoard automatically resolves the Figma `fileKey` through a multi-layered 
 ### Is it possible to use Ctrl+Z (Undo) in Miro to revert a sync or placement?
 **No.** Programmatic image creations and binary replacements via the Miro REST API or Web SDK bypass Miro's native client-side Undo/Redo history buffer (`Ctrl+Z` / `Cmd+Z`). Hitting `Ctrl+Z` after a sync will either have no effect or undo an earlier manual user edit on the canvas. If you need to refresh or revert a synced image, click **Sync** again to pull a fresh render from your design tool.
 
+### Why do my Penpot cards not show an "Open in Penpot" link?
+Penpot editor URLs cannot be derived from outside Penpot: the design file key is a plain UUID, and opening the editor requires host + team + project identifiers that only the Penpot app knows. The companion plugin sandbox cannot expose an editor URL either, so any stored or recalled link could only be stale or from an unrelated file. Figma cards keep a derived link (a stable `figma.com/file/{fileKey}/?node-id={nodeId}` URL); Penpot cards show the plain frame ID instead.
+
 ### Which web browsers are supported for running the Penpot companion?
 The Penpot companion plugin runs within Penpot's standard plugin iframe environment. It is fully supported in all modern evergreen browsers (Chrome, Edge, Firefox, Safari, and Brave). 
 * *Note:* If you are using Brave or strict tracking protection in Firefox, ensure that third-party cookie/local storage blocking is relaxed for the Penpot and SyncingBoard domains to allow Ably WebSocket connections and pairing ID persistence.

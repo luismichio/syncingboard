@@ -1,7 +1,7 @@
 ---
 title: SyncingBoard Overview & Features
-description: Stateless, open-source integration tool syncing design screens from Figma and Penpot directly into Miro whiteboards in-place with zero duplicates.
-updated: 2026-08-04
+description: Stateless, open-source integration tool syncing design screens from Figma and Penpot directly into Miro and FigJam whiteboards in-place with zero duplicates.
+updated: 2026-08-10
 ---
 
 # SyncingBoard (Figma & Penpot to Miro Sync Engine)
@@ -20,7 +20,7 @@ updated: 2026-08-04
 
 
 
-SyncingBoard is a stateless, open-source integration tool that lets product and design teams sync design screens from **Figma** and **Penpot** directly into Miro boards as lightweight, flat images. It prevents canvas clutter by updating images **in-place** (zero duplicates) using metadata tagged inside Miro's native `title` property.
+SyncingBoard is a stateless, open-source integration tool that lets product and design teams sync design screens from **Figma** and **Penpot** directly into **Miro** boards — or the **FigJam app** target — as lightweight, flat images. It prevents canvas clutter by updating images **in-place** (zero duplicates) using metadata tagged inside Miro's native `title` property.
 
 Unlike official live embeds which require browser logins and degrade board performance, SyncingBoard places fast-loading, flat images that stakeholders can annotate, draw on, and reference instantly.
 
@@ -48,8 +48,9 @@ SyncingBoard is deliberately built as a stateless proxy engine for key technical
 * **Batch Limit of 3:** Sync up to 3 unique frames per operation to stay within API rate limits (Community version). Warning banner appears when exceeded.
 * **Dual-Platform Sync:** Supports **Figma** (cloud-native sync) and **Penpot** (relay-first sync) side-by-side.
 * **Figma & Penpot Selection Auto-Detect:** Detects active selections directly from companion plugins via the cloud relay — no desktop apps required.
+* **FigJam App Target:** The full SyncingBoard panel also runs inside **FigJam** (Figma whiteboards) — in-place updates, Replace Selected, Penpot sync, and live selection relay — with no Miro board required (shipped 0.16.1, M1).
 * **Cloud Relay Transport:** Public HTTPS relay (Upstash Redis + Vercel) coordinates between companions and the Miro plugin — no localhost calls, no PNA blocks, works in any browser.
-* **Automated Test Coverage:** 123 Vitest unit and integration tests validating token security, rate-limiting logic, URL parsers, and API route handlers (`yarn test`).
+* **Automated Test Coverage:** 138 Vitest unit and integration tests validating token security, rate-limiting logic, URL parsers, and API route handlers (`yarn test`).
 * **SyncBridge Companion (Planned Desktop Extender):** Tauri-powered desktop app for future advanced capabilities — large images (>4.5MB), Adobe UXP bridge, local LLMs, two-way sync. Not required for day-to-day sync.
 
 ### Integration & Compatibility Matrix
@@ -58,9 +59,10 @@ SyncingBoard is deliberately built as a stateless proxy engine for key technical
 | :--- | :--- | :--- | :--- |
 | **Figma URL Import / Sync** | Browser or Desktop | Browser or Desktop | **Shipped** |
 | **Figma Auto-Detect Selection** | Figma Desktop or Browser | Browser or Desktop | **Shipped** (via Figma Companion Plugin) |
-| **Penpot URL Import & Selection** | Penpot Browser | Browser or Desktop | **Shipped** (Cloud relay via Companion plugin) |
+| **Penpot Detect & Import** | Penpot Browser | Browser or Desktop | **Shipped** (Companion-plugin detection; no Penpot URL import — the Penpot sandbox exposes no editor URL) |
 | **Penpot Export & Render** | Penpot Browser | Browser or Desktop | **Shipped** (Companion plugin renders locally, relay handles transport) |
 | **Replace Selected (Adopt Image)** | Browser or Desktop | Browser or Desktop | **Shipped** |
+| **FigJam App (Target)** | FigJam (Figma Plugin) | Runs inside FigJam | **Shipped** (hosted panel: sync / import / replace; PNG-only) |
 | **Figma / Miro Login (OAuth)** | Any browser | Browser or Desktop | **Shipped** (Stateless OAuth polling) |
 | **Large Images (>4.5MB)** | Browser or Desktop | Browser or Desktop | **Planned** (SyncBridge capability extender) |
 | **Adobe UXP / Local LLMs / Two-Way Sync** | Desktop apps | Browser or Desktop | **Planned** (SyncBridge capability extender) |

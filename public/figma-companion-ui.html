@@ -666,7 +666,7 @@ let currentPairingId = '';
         const name = d && d.name ? d.name : 'None';
         log(`Selected node: ${name}`);
         // M3 relay-pull: stream the current Figma selection to the pairing
-        // channel so the FigJam mirror (or any destination client) can fill
+        // channel so the FigJam app (or any destination client) can fill
         // its Import card live — no button press needed.
         if (ablyChannel && currentPairingId && d && d.id) {
           ablyChannel.publish('selection', {

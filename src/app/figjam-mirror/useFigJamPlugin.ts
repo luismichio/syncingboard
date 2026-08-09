@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuthTokens } from '@/app/miro-plugin/useAuthTokens';
 import { parseFigmaUrl } from '@/lib/sync/figmaUrlParser';
-import { parsePenpotUrl } from '@/lib/sync/penpotUrlParser';
 import { callRelay, getOrCreatePairingId, subscribeRelayLive } from '@/lib/sync/companionRelayClient';
 import { decodeHtmlEntities } from '@/lib/decodeHtmlEntities';
 import { SyncedImage } from '@/app/miro-plugin/useMiroSelection';
@@ -207,7 +206,6 @@ export function useFigJamPlugin() {
   const [syncAllCopies, setSyncAllCopies] = useState(false);
   const [preserveSize, setPreserveSize] = useState(false);
   const [propagate, setPropagate] = useState(false);
-  const [penpotInput, setPenpotInput] = useState('');
   const [penpotNodeInfo, setPenpotNodeInfo] = useState<{
     fileId: string;
     objectId: string;
@@ -267,7 +265,17 @@ const [figmaTier, setFigmaTier] = useState<string | null>(null);
 // disabled — no override exists.
 const figmaIsCommunity =
   figmaTier === null || /community|free|starter/i.test(figmaTier);
-const [limitOverride, setLimitOverrideState] = useState<number | null>(null);
+const [limitOverride, setLimitOverrideState] = useState<number | null>(() => {
+  // Restore a persisted override lazily (no synchronous setState in an effect).
+  try {
+    const stored = localStorage.getItem('sb_figma_window_override');
+    const n = stored ? Number(stored) : NaN;
+    return Number.isFinite(n) && n > 0 ? n : null;
+  } catch {
+    // localStorage may be unavailable in embedded WebViews.
+    return null;
+  }
+});
 const effectiveLimit = useCallback((): number => {
   const overridden = limitOverrideRef.current;
   return overridden && overridden > 0 ? overridden : windowLimitRef.current;
@@ -302,22 +310,13 @@ const setFigmaWindowOverride = useCallback(
   },
   [refreshWindow]
 );
-// Restore a persisted override on mount.
+// Sync the persisted override into the ref consumed by effectiveLimit(),
+// outside render (refs must not be touched during render), then refresh the
+// window UI. No setState runs here — the value was restored lazily above.
 useEffect(() => {
-  try {
-    const stored = localStorage.getItem('sb_figma_window_override');
-    if (stored) {
-      const n = Number(stored);
-      if (Number.isFinite(n) && n > 0) {
-        limitOverrideRef.current = n;
-        setLimitOverrideState(n);
-      }
-    }
-  } catch {
-    // ignore
-  }
+  limitOverrideRef.current = limitOverride;
   refreshWindow();
-}, [refreshWindow]);
+}, [limitOverride, refreshWindow]);
 // Wait until a slot frees up in the rolling window (oldest call expires
 // 60s after it was made). Cap each wait at 40s; if it stays full the
 // 429 + Retry-After path still guards.
@@ -391,6 +390,11 @@ useEffect(() => {
   const status = useCallback((message: string, type: SyncStatusType = 'info') => {
     setSyncStatus({ message, type });
   }, []);
+  const resetRenderCache = useCallback(() => {
+    renderCacheRef.current.clear();
+    setFigmaCacheHits(0);
+    status('Image cache cleared — next render fetches fresh', 'info');
+  }, [status]);
 
   // M3 relay-pull, opt-in: only when the user enables "Live Figma selection"
   // in Settings does the mirror subscribe to the Figma companion's live
@@ -725,6 +729,7 @@ useEffect(() => {
       }
       const safeScale = scale ?? 1;
       const safeFormat = format ?? 'png';
+      setIsSyncing(true);
       status(`Rendering ${figmaNodeInfo.name || figmaNodeInfo.nodeId}…`, 'progress');
       try {
         let dataUrl = await cachedFetch(
@@ -755,6 +760,7 @@ useEffect(() => {
 
   const detectLocalFigmaSelection = useCallback(async () => {
     setIsDetectingLocal(true);
+    status('Waiting for the Figma Companion — select a frame in Figma…', 'progress');
     try {
       const pairingId = getOrCreatePairingId();
       if (!pairingId) {
@@ -933,10 +939,11 @@ useEffect(() => {
       scale: number
     ) => {
       if (selectedItems.length === 0 && foreignSelection.length === 0) {
-        status('Select a mirror or any image on the canvas to replace it.', 'error');
+        status('Select a FigJam shape or any image on the canvas to replace it.', 'error');
         return;
       }
       status(`Rendering ${nodeName || nodeId}…`, 'progress');
+      setIsSyncing(true);
       try {
         let dataUrl: string;
         if (platform === 'penpot') {
@@ -975,7 +982,7 @@ useEffect(() => {
         status(noteError(err), 'error');
       }
     },
-    [selectedItems, foreignSelection, cachedFetch, noteError, renderNode, placeOnBoard, status, preserveSize]
+    [selectedItems, foreignSelection, cachedFetch, noteError, renderNode, placeOnBoard, status, preserveSize, setIsSyncing]
   );
 
   // ---- Group setting changes (format/scale on the Sync cards) ----
@@ -1011,26 +1018,10 @@ useEffect(() => {
     [propagate]
   );
 
-  // ---- Penpot (paste link + detect via the Penpot Companion relay) ----
-  const parsePenpotLink = useCallback((url: string): boolean => {
-    setPenpotInput(url);
-    const parsed = parsePenpotUrl(url);
-    if (parsed) {
-      setPenpotNodeInfo({
-        fileId: parsed.fileId,
-        objectId: parsed.objectId,
-        name: 'Selected Frame',
-      });
-      status('Valid Penpot link detected.');
-      return true;
-    }
-    setPenpotNodeInfo(null);
-    status('That does not look like a Penpot file link', 'error');
-    return false;
-  }, [status]);
-
+  // ---- Penpot (detect via the Penpot Companion relay) ----
   const detectLocalPenpotSelection = useCallback(async () => {
     setIsDetectingPenpotLocal(true);
+    status('Waiting for the Penpot Companion — select a frame in Penpot…', 'progress');
     try {
       const pairingId = getOrCreatePairingId();
       if (!pairingId) {
@@ -1046,10 +1037,14 @@ useEffect(() => {
       if (!payload?.id) {
         throw new Error('No frame currently selected in Penpot.');
       }
+
+      const fileId = payload.fileId || 'unknown-file';
+      const nodeName = payload.name ? decodeHtmlEntities(payload.name) : 'Penpot Frame';
+
       setPenpotNodeInfo({
-        fileId: payload.fileId || 'unknown-file',
+        fileId,
         objectId: payload.id,
-        name: payload.name ? decodeHtmlEntities(payload.name) : 'Penpot Frame',
+        name: nodeName,
       });
       status(`Detected Penpot frame: "${payload.name || payload.id}"`, 'info');
     } catch (err: unknown) {
@@ -1063,7 +1058,7 @@ useEffect(() => {
   const importPenpotScreen = useCallback(
     async (format: 'png' | 'svg' = 'svg', scale: number = 1) => {
       if (!penpotNodeInfo) {
-        status('Paste a Penpot file link first', 'error');
+        status('Detect a Penpot frame first', 'error');
         return;
       }
       setIsSyncing(true);
@@ -1118,7 +1113,6 @@ useEffect(() => {
     setFigmaNodeInfo(null);
     setPenpotNodeInfo(null);
     setFigmaInput('');
-    setPenpotInput('');
     setFigmaParseError(null);
   }, []);
 
@@ -1143,10 +1137,8 @@ useEffect(() => {
     parseFigmaLink,
     detectLocalFigmaSelection,
     importFigmaScreen,
-    penpotInput,
     penpotNodeInfo,
     isDetectingPenpotLocal,
-    parsePenpotLink,
     detectLocalPenpotSelection,
     importPenpotScreen,
     syncSelectedScreens,
@@ -1174,6 +1166,7 @@ useEffect(() => {
     setFigmaWindowOverride,
     cooldownUntil,
     rateBudget,
+    resetRenderCache,
     resetImportState,
   } as const;
 }

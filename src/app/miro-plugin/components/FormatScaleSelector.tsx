@@ -4,6 +4,7 @@ interface FormatScaleSelectorProps {
   availableScales: number[];
   onFormatChange: (format: 'png' | 'svg') => void;
   onScaleChange: (scale: number) => void;
+  hideSvg?: boolean;
 }
 
 export function FormatScaleSelector({
@@ -12,9 +13,11 @@ export function FormatScaleSelector({
   availableScales,
   onFormatChange,
   onScaleChange,
+  hideSvg = false,
 }: FormatScaleSelectorProps) {
   return (
     <div className="flex gap-2 mt-2 pt-2 border-t border-border-card/30">
+      {!hideSvg && (
       <div className="flex-1 flex flex-col gap-0.5">
         <span className="text-[8px] font-mono text-text-muted uppercase tracking-wider">Format</span>
         <select
@@ -26,6 +29,7 @@ export function FormatScaleSelector({
           <option value="svg">SVG</option>
         </select>
       </div>
+      )}
 
       {format === 'png' && (
         <div className="flex-1 flex flex-col gap-0.5">

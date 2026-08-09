@@ -79,7 +79,7 @@ function resolveFileKey() {
 // ---- FigJam target mirror (editorType === 'figjam') -------------------------
 // The FigJam board is a destination. These helpers create a tracked Rectangle
 // with an IMAGE fill and update it in place (imageHash swap), deduplicated by
-// fileKey|nodeId. They mirror FigJamAdapter (src/app/figjam-plugin/).
+// fileKey|nodeId. They mirror the FigJam client logic (src/app/figjam-mirror/useFigJamPlugin.ts).
 const SB_META_KEY = 'syncingboard';
 
 function figjamKey(fileKey, nodeId) {
@@ -477,6 +477,8 @@ async function figjamReplace(payload) {
       // Nothing selected to replace — fall back to plain placement.
       return figjamPlace(payload);
     }
+    // Replace rewrites ONLY the nodes currently selected on the canvas.
+    const allTargets = targets;
     const keepSize = payload.preserveSize === true;
     let image;
     try {
@@ -503,7 +505,7 @@ async function figjamReplace(payload) {
       }
     }
     const resultNodes = [];
-    for (const existing of targets) {
+    for (const existing of allTargets) {
       // Keep the user's crop position: carry the previous FILL transform
       // over so replacing does not reset the image inside the rectangle.
       let prevTransform;

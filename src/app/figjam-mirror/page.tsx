@@ -27,6 +27,10 @@ function buildGroupedItems(selectedItems: SyncedImage[]): GroupedSyncedImage[] {
     const key = `${item.fileKey}|${item.nodeId}`;
     if (!groups[key]) {
       const platform = item.platform || 'figma';
+      const sourceUrl =
+        platform === 'figma' && item.fileKey && item.nodeId
+          ? `https://www.figma.com/file/${item.fileKey}/?node-id=${encodeURIComponent(item.nodeId)}`
+          : undefined;
       groups[key] = {
         key,
         fileKey: item.fileKey,
@@ -34,6 +38,7 @@ function buildGroupedItems(selectedItems: SyncedImage[]): GroupedSyncedImage[] {
         nodeName: item.nodeName,
         format: item.format || (platform === 'penpot' ? 'svg' : 'png'),
         scale: item.scale || 2,
+        url: sourceUrl,
         widgets: [],
         platform,
       };
@@ -158,13 +163,12 @@ export default function FigJamPluginPage() {
             detectLocalFigmaSelection={hook.detectLocalFigmaSelection}
             importFigmaScreen={hook.importFigmaScreen}
             mirrorMode
-            penpotInput={hook.penpotInput}
             penpotNodeInfo={hook.penpotNodeInfo}
             isDetectingPenpotLocal={hook.isDetectingPenpotLocal}
-            parsePenpotLink={hook.parsePenpotLink}
             detectLocalPenpotSelection={hook.detectLocalPenpotSelection}
             importPenpotScreen={hook.importPenpotScreen}
             replaceSelectedWidget={hook.replaceSelectedWidget}
+            onResetCache={hook.resetRenderCache}
             onClearFigmaNodeInfo={hook.resetImportState}
             onClearPenpotNodeInfo={hook.resetImportState}
           />
@@ -190,18 +194,6 @@ export default function FigJamPluginPage() {
             defaultPngScale={defaultPngScale}
             onDefaultPngScaleChange={handleDefaultPngScaleChange}
             availableScales={AVAILABLE_SCALES}
-            rateLimited={hook.rateLimited}
-            figmaApiCalls={hook.figmaApiCalls}
-            figmaCacheHits={hook.figmaCacheHits}
-            figmaRateInfo={
-              hook.rateInfo
-                ? `${hook.rateInfo.planTier} · ${hook.rateInfo.limitType} · retry-after ${hook.rateInfo.retryAfter}s`
-                : null
-            }
-            rateWindow={hook.rateWindow}
-            figmaTier={hook.figmaTier}
-            cooldownUntil={hook.cooldownUntil}
-            rateBudget={hook.rateBudget}
           />
         )}
       </section>

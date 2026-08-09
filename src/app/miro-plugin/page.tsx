@@ -25,6 +25,10 @@ function buildGroupedItems(selectedItems: SyncedImage[]): GroupedSyncedImage[] {
     const key = `${item.fileKey}|${item.nodeId}`;
     if (!groups[key]) {
       const platform = item.platform || 'figma';
+      const sourceUrl =
+        platform === 'figma' && item.fileKey && item.nodeId
+          ? `https://www.figma.com/file/${item.fileKey}/?node-id=${encodeURIComponent(item.nodeId)}`
+          : undefined;
       groups[key] = {
         key,
         fileKey: item.fileKey,
@@ -32,6 +36,7 @@ function buildGroupedItems(selectedItems: SyncedImage[]): GroupedSyncedImage[] {
         nodeName: item.nodeName,
         format: item.format || (platform === 'penpot' ? 'svg' : 'png'),
         scale: item.scale || 2,
+        url: sourceUrl,
         widgets: [],
         platform,
       };
@@ -66,10 +71,8 @@ export default function MiroPluginPage() {
     parseFigmaLink,
     detectLocalFigmaSelection,
     importFigmaScreen,
-    penpotInput,
     penpotNodeInfo,
     isDetectingPenpotLocal,
-    parsePenpotLink,
     detectLocalPenpotSelection,
     importPenpotScreen,
     syncSelectedScreens,
@@ -384,10 +387,8 @@ export default function MiroPluginPage() {
             parseFigmaLink={parseFigmaLink}
             detectLocalFigmaSelection={detectLocalFigmaSelection}
             importFigmaScreen={importFigmaScreen}
-            penpotInput={penpotInput}
             penpotNodeInfo={penpotNodeInfo}
             isDetectingPenpotLocal={isDetectingPenpotLocal}
-            parsePenpotLink={parsePenpotLink}
             detectLocalPenpotSelection={detectLocalPenpotSelection}
             importPenpotScreen={importPenpotScreen}
             replaceSelectedWidget={replaceSelectedWidget}

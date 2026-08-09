@@ -89,3 +89,11 @@ for (const file of files) {
 }
 
 console.log(`\nVersion injected: v${VERSION} ${PLAN_DISPLAY}`);
+
+// NOTE: public/penpot-manifest.json deliberately has NO "version" field.
+// Penpot RC5 rejects non-default manifest versions ("invalid manifest
+// version"), its plugins-runtime schema (zod) does not even define a version
+// key, and its own parser defaults the version to 1 when absent — so any
+// value other than a tiny int risks rejection and buys nothing. Plugin
+// freshness is handled by the Cache-Control: no-store header on /penpot-*
+// (vercel.json) plus Penpot re-fetching dev plugins on each run.

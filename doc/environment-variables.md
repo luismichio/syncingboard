@@ -54,19 +54,22 @@ SyncingBoard includes an optional 3-layer protection engine. Redis-backed rate l
 | `RATE_LIMIT_ENABLED` | Boolean | `true` | Set to `false` to disable rate limiting entirely. |
 | `RATE_LIMIT_COMMUNITY_FIGMA_PER_MIN` | Number | `5` | Figma node-info and render requests allowed per minute per user OAuth token hash. |
 | `RATE_LIMIT_COMMUNITY_FIGMA_PER_DAY` | Number | `50` | Figma render requests allowed per day per user OAuth token hash. |
-| `RATE_LIMIT_COMMUNITY_RELAY_PER_MIN` | Number | `5` | Penpot relay render requests allowed per minute per pairing ID. |
-| `RATE_LIMIT_COMMUNITY_RELAY_PER_HOUR` | Number | `30` | Penpot relay render requests allowed per hour per pairing ID. |
-| `RATE_LIMIT_COMMUNITY_RELAY_PER_DAY` | Number | `100` | Penpot relay render requests allowed per day per pairing ID. |
+| `RATE_LIMIT_COMMUNITY_RELAY_PER_MIN` | Number | `8` | Penpot relay render requests allowed per minute per pairing ID. |
+| `RATE_LIMIT_COMMUNITY_RELAY_PER_HOUR` | Number | `60` | Penpot relay render requests allowed per hour per pairing ID. |
+| `RATE_LIMIT_COMMUNITY_RELAY_PER_DAY` | Number | `200` | Penpot relay render requests allowed per day per pairing ID. |
+| `RATE_LIMIT_COMMUNITY_RELAY_RESPONSE_PER_MIN` | Number | `40` | Penpot relay result-read requests allowed per minute per pairing ID (the single-read GET that consumes a render). |
 | `RATE_LIMIT_COMMUNITY_RELAY_SESSION_PER_MIN` | Number | `4` | Miro relay-session heartbeat/release requests allowed per minute per session ID. |
 | `RATE_LIMIT_COMMUNITY_MAX_RELAY_SESSIONS` | Number | `40` | Maximum concurrent relay sessions across the Community deployment (target/source agnostic: Figma/Penpot → Miro today, FigJam/Mural later). **`0` = unlimited** (no cap; bounded only by your Ably connection limit). Legacy alias: `RATE_LIMIT_COMMUNITY_MAX_MIRO_RELAY_SESSIONS`. |
 | `RATE_LIMIT_COMMUNITY_MAX_COMPANION_TOKENS` | Number | `180` | Maximum concurrent companion Ably tokens across the Community deployment (Figma/Penpot companions). Miro detectors keep a permanent 20-socket floor on top of this. **`0` = unlimited** (no cap; bounded only by your Ably connection limit). |
 | `RATE_LIMIT_COMMUNITY_UPDATE_IMAGE_PER_MIN` | Number | `10` | Miro image updates allowed per minute per user token. |
 | `RATE_LIMIT_COMMUNITY_ABLY_TOKEN_PER_MIN` | Number | `5` | Ably token authentication requests allowed per minute per client IP. |
 | `RATE_LIMIT_COMMUNITY_OAUTH_REFRESH_PER_MIN` | Number | `3` | OAuth refresh exchanges allowed per minute per refresh-token hash. |
+| `RATE_LIMIT_COMMUNITY_OAUTH_STORE_GET_PER_MIN` | Number | `40` | OAuth one-time state reads/consumption (GET + DEL of the 300s store) allowed per minute per client. |
+| `RATE_LIMIT_COMMUNITY_OAUTH_STORE_POST_PER_MIN` | Number | `12` | OAuth state writes (popup-handoff initiation) allowed per minute per client. |
 | `RATE_LIMIT_COMMUNITY_GLOBAL_SYNCS_PER_DAY` | Number | `500` | Global daily cap on Figma render and Miro image-update resource operations across all users. |
 | `RATE_LIMIT_COMMUNITY_OAUTH_CALLBACK_PER_MIN` | Number | `20` | OAuth provider redirect callbacks allowed per minute per client IP. |
-| `RATE_LIMIT_COMMUNITY_RELAY_EXPORT_PER_MIN` | Number | `2` | Relay export commands allowed per minute per pairing ID. |
-| `RATE_LIMIT_COMMUNITY_RELAY_EXPORT_PER_DAY` | Number | `20` | Relay export commands allowed per day per pairing ID. |
+| `RATE_LIMIT_COMMUNITY_RELAY_EXPORT_PER_MIN` | Number | `8` | Relay export commands allowed per minute per pairing ID. |
+| `RATE_LIMIT_COMMUNITY_RELAY_EXPORT_PER_DAY` | Number | `100` | Relay export commands allowed per day per pairing ID. |
 
 ---
 

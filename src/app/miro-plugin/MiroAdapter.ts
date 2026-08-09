@@ -122,14 +122,20 @@ export class MiroAdapter implements TargetAdapter {
     let metadataSaved = true;
     let metadataError: string | undefined;
     try {
-      await image.setMetadata?.(metadataNamespace, {
+      const meta: Record<string, unknown> = {
         fileKey: placement.selection.fileKey,
         nodeId: placement.selection.nodeId,
         nodeName: placement.selection.nodeName,
         format: placement.selection.format,
         scale: placement.selection.scale,
         ...placement.metadata,
-      } satisfies SyncingboardMeta);
+      };
+      // Miro REST rejects undefined values inside metadata (Validation
+      // error: Invalid value at "value" …) — drop any undefined keys.
+      for (const key of Object.keys(meta)) {
+        if (meta[key] === undefined) delete meta[key];
+      }
+      await image.setMetadata?.(metadataNamespace, meta as SyncingboardMeta);
       await image.sync?.();
     } catch (err) {
       metadataSaved = false;
