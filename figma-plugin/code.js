@@ -1,12 +1,38 @@
 // SyncingBoard Figma Companion Plugin - Background script
+// One package runs in both Figma (design companion) and FigJam (target mirror).
+// Branch on figma.editorType so the design-file companion logic never runs in FigJam.
+const EDITOR_TYPE = typeof figma.editorType === 'string' ? figma.editorType : 'figma';
+
+// FigJam editor: give the mirror a tall plugin window so its cards + footer
+// fit without scrollbars. The Figma design sidebar keeps its default height.
+// Must run AFTER figma.showUI — resizing before the UI exists is a no-op.
+const IS_FIGJAM = EDITOR_TYPE !== 'figma';
+
 figma.showUI(__html__, {
   width: 320,
   height: 480,
   themeColors: true,
 });
 
+if (IS_FIGJAM) {
+  try {
+    figma.ui.resize(390, 880);
+  } catch (e) {}
+}
+
 let globalFileKey = 'unknown';
 let previewHost = '';
+
+// Announce which editor this plugin runs in so the UI can render the right mode.
+figma.ui.postMessage({ action: 'editor-type', editorType: EDITOR_TYPE });
+
+// FigJam target: snapshot the currently tracked rectangles so the hosted
+// mirror UI can render the sync list on open.
+if (IS_FIGJAM) {
+  try {
+    figma.ui.postMessage({ action: 'figjam-state', tracked: figjamTrackedSummary() });
+  } catch (e) {}
+}
 
 // Pre-load saved fileKey from storage in the background
 try {
@@ -38,7 +64,9 @@ function normalizeHost(raw) {
 }
 
 // Resolve the current file key: figma.fileKey > document metadata > clientStorage > memory
+// FigJam files have no design fileKey, so a FigJam instance resolves to '' (target side).
 function resolveFileKey() {
+  if (IS_FIGJAM) return '';
   let docFileKey;
   try {
     docFileKey = figma.root.getPluginData('syncingboard_file_key');
@@ -48,24 +76,556 @@ function resolveFileKey() {
   return figma.fileKey || docFileKey || globalFileKey || 'unknown';
 }
 
+// ---- FigJam target mirror (editorType === 'figjam') -------------------------
+// The FigJam board is a destination. These helpers create a tracked Rectangle
+// with an IMAGE fill and update it in place (imageHash swap), deduplicated by
+// fileKey|nodeId. They mirror the FigJam client logic (src/app/figjam-mirror/useFigJamPlugin.ts).
+const SB_META_KEY = 'syncingboard';
+
+function figjamKey(fileKey, nodeId) {
+  return `${fileKey}|${nodeId}`;
+}
+
+function figjamAllTracked() {
+  try {
+    return figma.currentPage.findAll(function (n) {
+      try {
+        return typeof n.getPluginData === 'function' && !!n.getPluginData(SB_META_KEY);
+      } catch (e) {
+        return false;
+      }
+    });
+  } catch (e) {
+    return [];
+  }
+}
+
+function figjamFindByKey(fileKey, nodeId) {
+  return figjamFindAllByKey(fileKey, nodeId)[0] || null;
+}
+
+// Duplicates of a rect share the pluginData key but are separate nodes;
+// syncing must update ALL of them in place (the mirror counts them as one
+// frame, and copies stay in sync like Miro's in-place updates).
+function figjamFindAllByKey(fileKey, nodeId) {
+  try {
+    return figjamAllTracked().filter(function (n) {
+      try {
+        const meta = JSON.parse(n.getPluginData(SB_META_KEY) || '{}');
+        return meta.fileKey === fileKey && meta.nodeId === nodeId;
+      } catch (e) {
+        return false;
+      }
+    });
+  } catch (e) {
+    return [];
+  }
+}
+
+function figjamMeta(node) {
+  try {
+    return JSON.parse(node.getPluginData(SB_META_KEY) || '{}');
+  } catch (e) {
+    return {};
+  }
+}
+
+function figjamTrackedSummary() {
+  return figjamAllTracked().map(function (n) {
+    const meta = figjamMeta(n);
+    return {
+      id: n.id,
+      key: meta.key || figjamKey(meta.fileKey || '', meta.nodeId || ''),
+      fileKey: meta.fileKey || '',
+      nodeId: meta.nodeId || '',
+      name: meta.name || n.name || '',
+      format: meta.format || 'png',
+      scale: meta.scale || 1,
+      platform: meta.platform || 'figma',
+    };
+  });
+}
+
+// Place (create or in-place update) a rendered figure as an image Rectangle.
+
+// True when a node really accepted the given image fill. Fill writes on
+// locked instances/components are silently ignored — the caller then swaps
+// the node object instead of leaving the old artwork overlapping the new.
+function fillImageMatches(node, newFill) {
+  try {
+    const f = node.fills && node.fills[0];
+    return !!f && f.type === 'IMAGE' && f.imageHash === newFill.imageHash;
+  } catch (e) {
+    return false;
+  }
+}
+// Figma re-literally removes the node, its children get REPARENTED to the
+// removed node's parent — a component/instance swap would leave old artwork
+// floating over the new position (the "old content overlapping the synced
+// image" report). Delete the subtree children-first, then the node.
+function removeNodeAndChildren(node) {
+  if (!node || typeof node.removed === 'undefined' || node.removed) return;
+  // Instances are atomic: their internals are not re-parentable — removing
+  // the instance itself removes its content (no child traversal needed).
+  if (node.type === 'INSTANCE') {
+    try {
+      node.remove();
+    } catch (e) {}
+    return;
+  }
+  const children = node.children || [];
+  for (let i = children.length - 1; i >= 0; i--) removeNodeAndChildren(children[i]);
+  try {
+    node.remove();
+  } catch (e) {}
+}
+function swapTargetParent(node) {
+  try {
+    return node.parent && typeof node.removed !== 'undefined' && !node.removed ? node.parent : null;
+  } catch (e) {
+    return null;
+  }
+}
+// A node that still carries artwork UNDER its own image surface: a
+// component/instance (its children are component internals and stay
+// visible once an instance fill override is written) or any node with
+// children. Replacing such a node in-place leaves the inner content on
+// top — so these always get the FULL node swap instead of a fill rewrite.
+function nodeLooksLikeArtwork(node) {
+  if (!node) return false;
+  if (node.type === 'COMPONENT' || node.type === 'INSTANCE') return true;
+  try {
+    return !!(node.children && node.children.length > 0);
+  } catch (e) {
+    return false;
+  }
+}
+
+async function figjamPlace(payload) {
+  // Whole-body try/catch: FigJam runs this inside the editor and any
+  // synchronous throw (node lookup, createRectangle, appendChild...) would
+  // otherwise silence the result entirely and leave the mirror waiting on
+  // its watchdog. Always answer with a result.
+  try {
+    if (!payload || typeof payload.dataUrl !== 'string') {
+      return { ok: false, error: 'missing dataUrl' };
+    }
+    const fileKey = String(payload.fileKey || '');
+    const nodeId = String(payload.nodeId || '');
+    if (!fileKey || !nodeId) {
+      return { ok: false, error: 'missing fileKey/nodeId' };
+    }
+    const title = `${payload.name || nodeId} [FigmaSync|${fileKey}|${nodeId}]`;
+
+    // IMPORT NEW: Import's "Place on Canvas" must ALWAYS create a fresh
+    // rect — it must never rewrite an existing copy of the same frame key
+    // (that made a second placement silently overwrite the first).
+    const placeNew = payload.placeNew === true;
+    const existingAll = placeNew ? [] : figjamFindAllByKey(fileKey, nodeId);
+    // Replace mode (Import → Replace Selected): forceNodeIds targets the
+    // SELECTED nodes directly — mirrors AND foreign nodes (images placed by
+    // hand or other plugins). Their plugin data is rewritten to the new key.
+    let targetNodes = null;
+    if (Array.isArray(payload.forceNodeIds) && payload.forceNodeIds.length > 0) {
+      targetNodes = payload.forceNodeIds
+        .map(function (id) {
+          try {
+            const node = figma.getNodeById(String(id));
+            return node && typeof node.fills !== 'undefined' ? node : null;
+          } catch (e) {
+            return null;
+          }
+        })
+        .filter(Boolean);
+    }
+    if (!targetNodes || targetNodes.length === 0) {
+      // Selection-driven default: update ONLY the instances the caller names.
+      // Sync tab sends the selected nodeIds; "update all copies" (allCopies)
+      // opts into every instance of the key.
+      targetNodes =
+        payload.allCopies
+          ? existingAll
+          : (Array.isArray(payload.nodeIds) && payload.nodeIds.length > 0
+              ? existingAll.filter((n) => payload.nodeIds.includes(n.id))
+              : existingAll);
+    }
+    // "Keep canvas size": never resize, the FILL crop stays by design.
+    const keepSize = payload.preserveSize === true;
+    let image;
+    try {
+      image = await figma.createImageAsync(payload.dataUrl);
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: `createImageAsync failed (${detail})` };
+    }
+
+    // Recover the PNG's own pixel size from the data-URL. The exported PNG
+    // is already scaled by the render request (design size x scale), so the
+    // rect gets exactly those pixels: scale=2 visibly doubles the canvas
+    // object while staying crisp. SVG has no pixels — parse its width/height
+    // attributes (design size) and multiply by scale for the same intent.
+    const isSvg = String(payload.format || 'png').toLowerCase() === 'svg';
+    const scale = Number.isFinite(payload.scale) && payload.scale > 0 ? payload.scale : 1;
+    let targetW = null;
+    let targetH = null;
+    if (isSvg) {
+      const svg = svgDimensions(payload.dataUrl);
+      if (svg) {
+        targetW = Math.max(1, Math.round(svg.width * scale));
+        targetH = Math.max(1, Math.round(svg.height * scale));
+      }
+    } else {
+      const png = pngDimensions(payload.dataUrl);
+      if (png) {
+        targetW = Math.max(1, Math.round(png.width));
+        targetH = Math.max(1, Math.round(png.height));
+      }
+    }
+
+  if (targetNodes.length > 0) {
+    // In-place update: only the requested instances are resized + re-filled.
+    const resultNodes = [];
+    for (const existing of targetNodes) {
+      // Keep the user's crop position: carry the previous FILL transform over
+      // so re-syncing does not reset the image inside the rectangle.
+      let prevTransform;
+      try {
+        const prevFill = existing.fills && existing.fills[0];
+        if (prevFill && prevFill.type === 'IMAGE') prevTransform = prevFill.imageTransform;
+      } catch (e) {}
+      const gx0 = existing.x;
+      const gy0 = existing.y;
+      const gw0 = existing.width;
+      const gh0 = existing.height;
+      const prevName = existing.name;
+      if (!keepSize && targetW && targetH) existing.resize(targetW, targetH);
+      const newFill = { type: 'IMAGE', imageHash: image.hash, scaleMode: 'FILL' };
+      if (prevTransform) newFill.imageTransform = prevTransform;
+      existing.fills = [newFill];
+      // Components/instances/nodes-with-children can never be replaced in
+      // place — their internals remain visible (the reported overlap).
+      const artSwap = nodeLooksLikeArtwork(existing);
+      if (!artSwap && fillImageMatches(existing, newFill)) {
+        try {
+          existing.setPluginData(SB_META_KEY, JSON.stringify({
+            fileKey: fileKey, nodeId: nodeId, key: figjamKey(fileKey, nodeId),
+            imageHash: image.hash, name: payload.name || figjamMeta(existing).name || '',
+            format: payload.format || 'png',
+            scale: payload.scale || 1,
+            platform: payload.platform || 'figma',
+          }));
+        } catch (e) {}
+        resultNodes.push(existing);
+        continue;
+      }
+      // Cannot edit this node's fills (locked component / other plugin
+      // artwork): physically replace the node at its own position.
+      const swapParent = swapTargetParent(existing);
+      removeNodeAndChildren(existing);
+      const body = figma.createRectangle();
+      body.name = title || prevName;
+      const swapW = keepSize ? gw0 : (targetW || gw0);
+      const swapH = keepSize ? gh0 : (targetH || gh0);
+      body.resize(Math.max(1, swapW), Math.max(1, swapH));
+      body.x = gx0;
+      body.y = gy0;
+      body.fills = [newFill];
+      try {
+        body.setPluginData(SB_META_KEY, JSON.stringify({
+          fileKey: fileKey, nodeId: nodeId, key: figjamKey(fileKey, nodeId),
+          imageHash: image.hash, name: payload.name || prevName,
+          format: payload.format || 'png',
+          scale: payload.scale || 1,
+          platform: payload.platform || 'figma',
+        }));
+      } catch (e) {}
+      (swapParent || figma.currentPage).appendChild(body);
+      resultNodes.push(body);
+    }
+    figma.currentPage.selection = resultNodes;
+    return { ok: true, nodeId: resultNodes[0].id, key: figjamKey(fileKey, nodeId), name: payload.name || '', created: false, updated: resultNodes.length, swap: true };
+  }
+
+  const rect = figma.createRectangle();
+  rect.name = title;
+  const W = targetW || (Number.isFinite(payload.width) ? payload.width : 240);
+  const H = targetH || (Number.isFinite(payload.height) ? payload.height : 160);
+  if (!keepSize) rect.resize(W, H);
+  if (figma.viewport && Number.isFinite(figma.viewport.center.x) && Number.isFinite(figma.viewport.center.y)) {
+    rect.x = Math.round(figma.viewport.center.x - W / 2);
+    rect.y = Math.round(figma.viewport.center.y - H / 2);
+  }
+  const newFill = { type: 'IMAGE', imageHash: image.hash, scaleMode: 'FILL' };
+  rect.fills = [newFill];
+  try {
+    rect.setPluginData(SB_META_KEY, JSON.stringify({
+      fileKey: fileKey, nodeId: nodeId, key: figjamKey(fileKey, nodeId),
+      imageHash: image.hash,
+      name: payload.name || '', format: payload.format || 'png', scale: payload.scale || 1,
+      platform: payload.platform || 'figma',
+    }));
+  } catch (e) {}
+  figma.currentPage.appendChild(rect);
+  figma.currentPage.selection = [rect];
+  return { ok: true, nodeId: rect.id, key: figjamKey(fileKey, nodeId), name: payload.name || '', created: true };
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: `figjam-place failed (${detail})` };
+  }
+}
+
+// Return { width, height } from a PNG data-URL (IHDR is always at bytes
+// 16-23, big-endian). Falls back to null so callers keep their defaults.
+function pngDimensions(dataUrl) {
+  try {
+    const comma = dataUrl.indexOf(',');
+    if (comma < 0) return null;
+    const bytes = figma.base64Decode(dataUrl.slice(comma + 1));
+    if (bytes.length < 24) return null;
+    const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    const width = dv.getUint32(16);
+    const height = dv.getUint32(20);
+    if (width > 0 && height > 0 && width < 100000 && height < 100000) {
+      return { width, height };
+    }
+  } catch (e) {}
+  return null;
+}
+
+// Parse dimension info out of an SVG data-URL: width/height attributes
+// first, then the viewBox. Returns design-space {width, height} or null.
+function svgDimensions(dataUrl) {
+  try {
+    const comma = dataUrl.indexOf(',');
+    if (comma < 0) return null;
+    const isB64 = !/^data:image\/svg[^;]*(;charset[^;]*)?;base64,/i.test(dataUrl.slice(0, comma + 1));
+    let text;
+    if (isB64 || dataUrl.slice(0, comma).indexOf('base64') > -1) {
+      const bytes = figma.base64Decode(dataUrl.slice(comma + 1));
+      text = String.fromCharCode.apply(null, new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength));
+    } else {
+      text = decodeURIComponent(dataUrl.slice(comma + 1));
+    }
+    const head = text.slice(0, 4096);
+    const num = /\b(width|height)=["']([\d.]+)["']/g;
+    const w = /\bwidth=["']([\d.]+)/.exec(head);
+    const h = /\bheight=["']([\d.]+)/.exec(head);
+    let width = w ? parseFloat(w[1]) : NaN;
+    let height = h ? parseFloat(h[1]) : NaN;
+    if (!isFinite(width) || !isFinite(height)) {
+      const vb = /\bviewBox=["']([-\d.\s]+)["']/.exec(head);
+      if (vb && vb[1]) {
+        const parts = vb[1].trim().split(/[\s,]+/).map(Number);
+        if (parts.length === 4 && parts.every((n) => isFinite(n))) {
+          if (!isFinite(width)) width = parts[2];
+          if (!isFinite(height)) height = parts[3];
+        }
+      }
+    }
+    if (isFinite(width) && isFinite(height) && width > 0 && height > 0 && width < 100000 && height < 100000) {
+      return { width, height };
+    }
+  } catch (e) {}
+  return null;
+}
+
 // Push the current file key to the UI so it can load the companion iframe
 function pushFileKey() {
   figma.ui.postMessage({ action: 'file-key', fileKey: resolveFileKey() });
 }
 
-// Listen to selection changes on the active page
+function figjamNodeSummary(n) {
+  const meta = figjamMeta(n);
+  return {
+    id: n.id,
+    key: meta.key || figjamKey(meta.fileKey || '', meta.nodeId || ''),
+    fileKey: meta.fileKey || '',
+    nodeId: meta.nodeId || '',
+    name: meta.name || n.name || '',
+    format: meta.format || 'png',
+    scale: meta.scale || 1,
+    platform: meta.platform || 'figma',
+  };
+}
+
+// Selection state sent to the mirror: ONLY the currently selected tracked
+// rectangles (the Sync tab + badge are selection-driven, like Miro).
+// The summary carries each node's persisted format/scale/platform so the
+// mirror cards round-trip the group settings.
+// `foreign` lists every OTHER selected node (e.g. images placed by hand or
+// other plugins): the Import tab can then REPLACE those too, not only the
+// mirrors SyncingBoard placed.
+// Replace mode (Import → Replace Selected): the plugin reads the CURRENT
+// selection at message time — the mirror never guesses which nodes are
+// selected (tracked mirrors AND foreign images behave identically). Every
+// selected node is replaced in place and its plugin data switches to the
+// new frame key; with no selection it degrades to the placement path.
+async function figjamReplace(payload) {
+  try {
+    if (!payload || typeof payload.dataUrl !== 'string') {
+      return { ok: false, error: 'missing dataUrl' };
+    }
+    const fileKey = String(payload.fileKey || '');
+    const nodeId = String(payload.nodeId || '');
+    if (!fileKey || !nodeId) {
+      return { ok: false, error: 'missing fileKey/nodeId' };
+    }
+    const targets = (figma.currentPage.selection || []).filter(function (n) {
+      return n && typeof n.fills !== 'undefined';
+    });
+    if (targets.length === 0) {
+      // Nothing selected to replace — fall back to plain placement.
+      return figjamPlace(payload);
+    }
+    // Replace rewrites ONLY the nodes currently selected on the canvas.
+    const allTargets = targets;
+    const keepSize = payload.preserveSize === true;
+    let image;
+    try {
+      image = await figma.createImageAsync(payload.dataUrl);
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: `createImageAsync failed (${detail})` };
+    }
+    const isSvg = String(payload.format || 'png').toLowerCase() === 'svg';
+    const scale = Number.isFinite(payload.scale) && payload.scale > 0 ? payload.scale : 1;
+    let targetW = null;
+    let targetH = null;
+    if (isSvg) {
+      const svg = svgDimensions(payload.dataUrl);
+      if (svg) {
+        targetW = Math.max(1, Math.round(svg.width * scale));
+        targetH = Math.max(1, Math.round(svg.height * scale));
+      }
+    } else {
+      const png = pngDimensions(payload.dataUrl);
+      if (png) {
+        targetW = Math.max(1, Math.round(png.width));
+        targetH = Math.max(1, Math.round(png.height));
+      }
+    }
+    const resultNodes = [];
+    for (const existing of allTargets) {
+      // Keep the user's crop position: carry the previous FILL transform
+      // over so replacing does not reset the image inside the rectangle.
+      let prevTransform;
+      try {
+        const prevFill = existing.fills && existing.fills[0];
+        if (prevFill && prevFill.type === 'IMAGE') prevTransform = prevFill.imageTransform;
+      } catch (e) {}
+      const gx0 = existing.x;
+      const gy0 = existing.y;
+      const gw0 = existing.width;
+      const gh0 = existing.height;
+      const prevName = existing.name;
+      if (!keepSize && targetW && targetH) existing.resize(targetW, targetH);
+      const newFill = { type: 'IMAGE', imageHash: image.hash, scaleMode: 'FILL' };
+      if (prevTransform) newFill.imageTransform = prevTransform;
+      existing.fills = [newFill];
+      // Components/instances/nodes-with-children can never be replaced in
+      // place — their inner artwork stays visible (the reported overlap).
+      const artSwap = nodeLooksLikeArtwork(existing);
+      if (!artSwap && fillImageMatches(existing, newFill)) {
+        try {
+          existing.setPluginData(
+            SB_META_KEY,
+            JSON.stringify({
+              fileKey: fileKey,
+              nodeId: nodeId,
+              key: figjamKey(fileKey, nodeId),
+              imageHash: image.hash,
+              name: payload.name || figjamMeta(existing).name || '',
+              format: payload.format || 'png',
+              scale: payload.scale || 1,
+              platform: payload.platform || 'figma',
+            })
+          );
+        } catch (e) {}
+        resultNodes.push(existing);
+        continue;
+      }
+      // Cannot change this node's fill (locked component) — swap it.
+      const swapParent = swapTargetParent(existing);
+      removeNodeAndChildren(existing);
+      const body = figma.createRectangle();
+      body.name = payload.name || prevName;
+      const swapW = keepSize ? gw0 : (targetW || gw0);
+      const swapH = keepSize ? gh0 : (targetH || gh0);
+      body.resize(Math.max(1, swapW), Math.max(1, swapH));
+      body.x = gx0;
+      body.y = gy0;
+      body.fills = [newFill];
+      try {
+        body.setPluginData(
+          SB_META_KEY,
+          JSON.stringify({
+            fileKey: fileKey,
+            nodeId: nodeId,
+            key: figjamKey(fileKey, nodeId),
+            imageHash: image.hash,
+            name: payload.name || prevName,
+            format: payload.format || 'png',
+            scale: payload.scale || 1,
+            platform: payload.platform || 'figma',
+          })
+        );
+      } catch (e) {}
+      (swapParent || figma.currentPage).appendChild(body);
+      resultNodes.push(body);
+    }
+    figma.currentPage.selection = resultNodes;
+    return {
+      ok: true,
+      nodeId: resultNodes[0].id,
+      key: figjamKey(fileKey, nodeId),
+      created: false,
+      updated: resultNodes.length,
+      swap: true,
+      name: payload.name || '',
+    };
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: `figjam-replace failed (${detail})` };
+  }
+}
+
+function figjamSelectionSummary() {
+  const selection = figma.currentPage.selection || [];
+  const tracked = [];
+  const foreign = [];
+  for (const n of selection) {
+    if (!n) continue;
+    let isTracked = false;
+    try {
+      isTracked = typeof n.getPluginData === 'function' && !!n.getPluginData(SB_META_KEY);
+    } catch (e) {}
+    if (isTracked) {
+      tracked.push(figjamNodeSummary(n));
+    } else {
+      foreign.push({ id: n.id, name: n.name || '' });
+    }
+  }
+  return { tracked, foreign };
+}
+
+// Listen to selection changes on the active page: the mirror's Sync tab is
+// SELECTION-DRIVEN (like Miro) — the badge counts selected tracked mirrors
+// and cards show only the selected ones.
 figma.on('selectionchange', () => {
-  const selection = figma.currentPage.selection;
-  figma.ui.postMessage({
-    action: 'selection-changed-locally',
-    data: selection[0]
-      ? {
-          id: selection[0].id,
-          name: selection[0].name,
-          fileKey: resolveFileKey(),
-        }
-      : null,
-  });
+  const sbSel = figjamSelectionSummary();
+  figma.ui.postMessage({ action: 'figjam-selection', tracked: sbSel.tracked, foreign: sbSel.foreign });
+  // M3 relay-pull: in the Figma design editor, also stream the current
+  // selection to the companion UI so it can publish it to the pairing
+  // channel (the FigJam mirror fills its Import card live).
+  if (EDITOR_TYPE === 'figma') {
+    const selection = figma.currentPage.selection;
+    figma.ui.postMessage({
+      action: 'selection-changed-locally',
+      data: selection[0]
+        ? { name: selection[0].name, id: selection[0].id, fileKey: resolveFileKey() }
+        : null,
+    });
+  }
 });
 
 // Message listener from UI
@@ -117,7 +677,85 @@ figma.ui.onmessage = async (msg) => {
     return;
   }
 
+  if (msg.action === 'figjam-place') {
+    // Destination: place (create or in-place update) a rendered figure.
+    const result = await figjamPlace(msg.payload);
+    figma.ui.postMessage({
+      action: 'figjam-place-result',
+      requestId: msg.requestId,
+      ...result,
+    });
+    return;
+  }
+
+  if (msg.action === 'figjam-replace') {
+    // Replace: rewrite the CURRENT selection in place (plugin-side).
+    const result = await figjamReplace(msg.payload);
+    figma.ui.postMessage({
+      action: 'figjam-place-result',
+      requestId: msg.requestId,
+      ...result,
+    });
+    return;
+  }
+
+  if (msg.action === 'get-selection-state') {
+    const sbSel = figjamSelectionSummary();
+  figma.ui.postMessage({ action: 'figjam-selection', tracked: sbSel.tracked, foreign: sbSel.foreign });
+    return;
+  }
+
+  // Persist per-instance render settings (format/scale) from the mirror's
+  // Sync tab group controls; propagate extends to sibling copies of the key.
+  if (msg.action === 'figjam-set-meta') {
+    const ids = Array.isArray(msg.nodeIds) ? msg.nodeIds : [];
+    const next = {};
+    if (typeof msg.format === 'string') next.format = msg.format;
+    if (Number.isFinite(msg.scale) && msg.scale > 0) next.scale = msg.scale;
+    if (typeof msg.platform === 'string') next.platform = msg.platform;
+    try {
+      figjamAllTracked()
+        .filter(function (n) {
+          if (ids.includes(n.id)) return true;
+          if (msg.propagate) {
+            const meta = figjamMeta(n);
+            return ids.some(function (id) {
+              const node = figjamAllTracked().find(function (m) { return m.id === id; });
+              if (!node) return false;
+              const m = figjamMeta(node);
+              return meta.fileKey === m.fileKey && meta.nodeId === m.nodeId;
+            });
+          }
+          return false;
+        })
+        .forEach(function (n) {
+          const meta = figjamMeta(n);
+          const updated = Object.assign({}, meta, next, { key: figjamKey(meta.fileKey || '', meta.nodeId || '') });
+          n.setPluginData(SB_META_KEY, JSON.stringify(updated));
+        });
+    } catch (e) {}
+    const sbSel = figjamSelectionSummary();
+  figma.ui.postMessage({ action: 'figjam-selection', tracked: sbSel.tracked, foreign: sbSel.foreign });
+    return;
+  }
+
+  if (msg.action === 'figjam-list') {
+    figma.ui.postMessage({ action: 'figjam-state', tracked: figjamTrackedSummary() });
+    return;
+  }
+
   if (msg.action === 'get-selection') {
+    if (EDITOR_TYPE !== 'figma') {
+      // FigJam is the destination: its own selection is not a source. The
+      // source selection lives in the Figma design file (or a pasted link).
+      figma.ui.postMessage({
+        action: 'selection-result',
+        requestId: msg.requestId,
+        data: null,
+        error: 'No source selection yet — choose a frame in Figma Files, or paste a Figma frame link here (source-side relay comes with M3).',
+      });
+      return;
+    }
     try {
       const selection = figma.currentPage.selection; // Synchronous read
       figma.ui.postMessage({

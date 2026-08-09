@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMiroPlugin } from './useMiroPlugin';
 import { SyncedImage } from './useMiroSelection';
-import { DISPLAY, PLAN } from '@/lib/version';
+import { PLAN } from '@/lib/version';
 import { getOrCreatePairingId, rotatePairingId } from '@/lib/sync/pairingId';
 import { heartbeatRelaySession, releaseLocalRelaySession, setRelayIdentity, sha256Hex } from '@/lib/sync/companionRelayClient';
 import { AppHeader } from './components/AppHeader';
@@ -12,6 +12,7 @@ import { BoardStatusFooter } from './components/BoardStatusFooter';
 import { SyncTab } from './components/SyncTab';
 import { ImportTab } from './components/ImportTab';
 import { SettingsTab } from './components/SettingsTab';
+import { VersionStamp } from '@/components/VersionStamp';
 import { GroupedSyncedImage, ImportPlatform, MiroPluginTab } from './types';
 
 const MAX_SCALE = PLAN === 'community' ? 2 : 4;
@@ -24,6 +25,10 @@ function buildGroupedItems(selectedItems: SyncedImage[]): GroupedSyncedImage[] {
     const key = `${item.fileKey}|${item.nodeId}`;
     if (!groups[key]) {
       const platform = item.platform || 'figma';
+      const sourceUrl =
+        platform === 'figma' && item.fileKey && item.nodeId
+          ? `https://www.figma.com/file/${item.fileKey}/?node-id=${encodeURIComponent(item.nodeId)}`
+          : undefined;
       groups[key] = {
         key,
         fileKey: item.fileKey,
@@ -31,6 +36,7 @@ function buildGroupedItems(selectedItems: SyncedImage[]): GroupedSyncedImage[] {
         nodeName: item.nodeName,
         format: item.format || (platform === 'penpot' ? 'svg' : 'png'),
         scale: item.scale || 2,
+        url: sourceUrl,
         widgets: [],
         platform,
       };
@@ -65,10 +71,8 @@ export default function MiroPluginPage() {
     parseFigmaLink,
     detectLocalFigmaSelection,
     importFigmaScreen,
-    penpotInput,
     penpotNodeInfo,
     isDetectingPenpotLocal,
-    parsePenpotLink,
     detectLocalPenpotSelection,
     importPenpotScreen,
     syncSelectedScreens,
@@ -324,6 +328,7 @@ export default function MiroPluginPage() {
 
   return (
     <div className="flex flex-col min-h-screen p-5 bg-bg-page text-text-page font-sans selection:bg-accent selection:text-bg-page transition-colors duration-200">
+
       <AppHeader
         tokensLoading={tokensLoading}
         figmaToken={figmaToken}
@@ -382,10 +387,8 @@ export default function MiroPluginPage() {
             parseFigmaLink={parseFigmaLink}
             detectLocalFigmaSelection={detectLocalFigmaSelection}
             importFigmaScreen={importFigmaScreen}
-            penpotInput={penpotInput}
             penpotNodeInfo={penpotNodeInfo}
             isDetectingPenpotLocal={isDetectingPenpotLocal}
-            parsePenpotLink={parsePenpotLink}
             detectLocalPenpotSelection={detectLocalPenpotSelection}
             importPenpotScreen={importPenpotScreen}
             replaceSelectedWidget={replaceSelectedWidget}
@@ -418,7 +421,7 @@ export default function MiroPluginPage() {
       </section>
 
       <footer className="mt-4 pt-3 border-t border-border-card">
-        <p className="text-center text-[9px] font-mono text-text-muted/50">{DISPLAY}</p>
+        <VersionStamp />
       </footer>
 
       <BoardStatusFooter status={syncStatus} />

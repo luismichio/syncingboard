@@ -263,6 +263,7 @@ describe("relay:request multi-window", () => {
   });
 
   it("blocks when the smallest window is exceeded first", async () => {
+    setEnv("RATE_LIMIT_COMMUNITY_RELAY_PER_MIN", "5");
     const { withRateLimit } = await import("./rate-limit");
     const handler = vi.fn().mockResolvedValue(new Response("ok", { status: 200 }));
     const wrapped = withRateLimit({ endpoint: "relay:request" })(handler);

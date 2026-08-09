@@ -14,7 +14,7 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title: "SyncingBoard",
     description:
-      "SyncingBoard is a stateless, self-hosted integration that syncs Figma and Penpot frame screenshots into Miro in-place with zero duplicates.",
+      "SyncingBoard is a stateless, self-hosted integration that syncs Figma and Penpot frame screenshots into Miro or FigJam in-place with zero duplicates.",
     icons: {
       icon: "/syncingboard_logo.svg",
     },
@@ -26,9 +26,9 @@ export async function generateMetadata(): Promise<Metadata> {
       type: "website",
       locale: "en_US",
       siteName: "SyncingBoard",
-      title: "SyncingBoard — Stateless Figma/Penpot-Miro Pipeline",
+      title: "SyncingBoard — Stateless Design-Board Pipeline",
       description:
-        "A database-free, self-hosted integration that syncs Figma and Penpot frame screenshots into Miro in-place with zero duplicates.",
+        "A database-free, self-hosted integration that syncs Figma and Penpot frame screenshots into Miro or FigJam in-place with zero duplicates.",
       url: SITE_URL,
       images: [
         {
@@ -41,9 +41,9 @@ export async function generateMetadata(): Promise<Metadata> {
     },
     twitter: {
       card: "summary_large_image",
-      title: "SyncingBoard — Stateless Figma/Penpot-Miro Pipeline",
+      title: "SyncingBoard — Stateless Design-Board Pipeline",
       description:
-        "A database-free, self-hosted integration that syncs Figma and Penpot frame screenshots into Miro in-place with zero duplicates.",
+        "A database-free, self-hosted integration that syncs Figma and Penpot frame screenshots into Miro or FigJam in-place with zero duplicates.",
       images: ["/syncingboard_logo_color.svg"],
     },
     keywords: [
@@ -95,17 +95,18 @@ export default function RootLayout({
         {/* Google Consent Mode v2 — default deny before GA loads */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `window.dataLayer = window.dataLayer || []; function gtag(){dataLayer.push(arguments);} gtag('consent', 'default', { analytics_storage: 'denied', ad_storage: 'denied', ad_user_data: 'denied', ad_personalization: 'denied', wait_for_update: 500 });`,
+            __html: `window.dataLayer = window.dataLayer || []; function gtag(){dataLayer.push(arguments);} gtag('consent', 'default', { analytics_storage: 'denied', ad_storage: 'denied', ad_user_data: 'denied', ad_personalization: 'denied', wait_for_update: 500 }); window.__sbSkipGA = (typeof location !== 'undefined' && (location.pathname.indexOf('/figjam-plugin') === 0 || location.pathname.indexOf('/figjam-mirror') === 0)) ? true : false;`,
           }}
         />
-        {/* Google Analytics */}
-        <script
-          async
-          src="https://www.googletagmanager.com/gtag/js?id=G-Q4W94QDWWC"
-        ></script>
+        {/* Google Analytics — never loaded on the FigJam plugin route */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `window.dataLayer = window.dataLayer || []; function gtag(){dataLayer.push(arguments);} gtag('js', new Date()); gtag('config', 'G-Q4W94QDWWC');`,
+            __html: `if (!window.__sbSkipGA) { var s = document.createElement('script'); s.async = true; s.src = 'https://www.googletagmanager.com/gtag/js?id=G-Q4W94QDWWC'; document.head.appendChild(s); }`,
+          }}
+        />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `if (!window.__sbSkipGA) { window.dataLayer = window.dataLayer || []; function gtag(){dataLayer.push(arguments);} gtag('js', new Date()); gtag('config', 'G-Q4W94QDWWC'); }`,
           }}
         />
         {/* Structured data */}
@@ -118,13 +119,14 @@ export default function RootLayout({
               name: "SyncingBoard",
               url: SITE_URL,
               description:
-                "A stateless, self-hosted integration that syncs Figma and Penpot frame screenshots into Miro in-place with zero duplicates.",
+                "A stateless, self-hosted integration that syncs Figma and Penpot frame screenshots into Miro or FigJam in-place with zero duplicates.",
               applicationCategory: "DesignApplication",
               operatingSystem: "All",
             }),
           }}
         />
         <script src="https://miro.com/app/static/sdk/v2/miro.js" defer></script>
+
         <script
           dangerouslySetInnerHTML={{
             __html: `

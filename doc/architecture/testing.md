@@ -1,6 +1,6 @@
 ---
 title: Testing & Quality Assurance
-description: Technical breakdown of SyncingBoard's 123 automated Vitest tests across 16 files covering token security, rate limiting, URL parsers, relay fairness, and API route handlers.
+description: Technical breakdown of SyncingBoard's 138 automated Vitest tests across 19 files covering token security, rate limiting, URL parsers, relay fairness, target adapters, and API route handlers.
 ---
 
 # Testing & Quality Assurance
@@ -25,14 +25,14 @@ graph TD
 
 ## Test Suites Breakdown
 
-SyncingBoard includes **123 passing automated tests** across 16 specialized test files:
+SyncingBoard includes **138 passing automated tests** across 19 specialized test files:
 
 | Test File | Category | Focus Area & Assertions |
 | :--- | :--- | :--- |
 | **`src/lib/tokens.test.ts`** | Security | Cryptographic token security, SHA-256 one-way hashing (`tok:sha256(token)`), pairing ID generation, and entropy validation. |
 | **`src/lib/docs.test.ts`** | Docs Engine | Document indexing, case-insensitive slug resolution (`/docs/LICENSE`), heading extraction, and word counts. |
-| **`src/app/miro-plugin/figmaUrlParser.test.ts`** | Parsers | Regex extraction of `fileKey` and `nodeId` from Figma web URLs, desktop app links, and frame selection parameters. |
-| **`src/app/miro-plugin/penpotUrlParser.test.ts`** | Parsers | Regex extraction of `fileId`, `pageId`, and `shapeId` from Penpot workspace URLs. |
+| **`src/lib/sync/figmaUrlParser.test.ts`** | Parsers | Regex extraction of `fileKey` and `nodeId` from Figma web URLs, desktop app links, and frame selection parameters. |
+| **`src/lib/sync/penpotUrlParser.test.ts`** | Parsers | Regex extraction of `fileId`, `pageId`, and `shapeId` from Penpot workspace URLs. The Penpot URL feature was removed in 0.16.1 — the parser is retained as a pure utility, no longer wired into import flows. |
 | **`src/lib/rate-limit.test.ts`** | Rate Limiting | Sliding-window algorithm, token-hash caller identification, daily budget counters, and `429 Too Many Requests` JSON body + `Retry-After` headers. |
 | **`src/app/api/oauth/store/route.test.ts`** | OAuth Handshake | Temporary 300s Redis OAuth state store (`POST /api/oauth/store`) and one-time token retrieval/deletion (`GET` + `DEL`). |
 | **`src/app/api/docs/search/route.test.ts`** | Search Engine | Full-text search endpoint (`GET /api/docs/search?q=...`), relevancy scoring, section deep-linking, and term highlighting. |
@@ -45,6 +45,9 @@ SyncingBoard includes **123 passing automated tests** across 16 specialized test
 | **`src/app/api/relay/request/route.test.ts`** | API Routes (R4) | Async-only relay endpoint: `400` rejection of synchronous callers before any Ably/Redis work, plus the async happy-path (reaches the request path). |
 | **`src/app/api/relay/status/route.test.ts`** | API Routes (R1) | Community relay snapshot (`activeSessions`/`maxSessions`/status), `503` when the status store is unavailable, transfer-conflict fields (`userConflict`/`activeBoardId`), malformed `userIdHash` ignored without a Redis lookup. |
 | **`src/app/api/ably/token/route.test.ts`** | API Routes (Design B) | Pre-external-call validation: `400` for invalid `pairingId`/`sessionId`/`userIdHash`, and the graceful `500` when `ABLY_API_KEY` is not configured (409/429 capacity decisions are covered by the relayRedis planners). |
+| **`src/app/miro-plugin/MiroAdapter.test.ts`** | Adapters | Miro widget create/update: metadata payloads, undefined-value sanitising before `setMetadata`, and title signature handling. |
+| **`src/app/figjam-mirror/FigJamAdapter.test.ts`** | FigJam Adapter | FigJam target adapter unit coverage (parity with the Miro adapter behaviour on the FigJam surface). |
+| **`src/app/api/build-id/route.test.ts`** | API Routes (Internal) | `GET /api/build-id` returns `local-<sha>` in dev and the empty string in production builds. |
 
 ---
 
@@ -53,7 +56,7 @@ SyncingBoard includes **123 passing automated tests** across 16 specialized test
 Run the test suite during development using the following commands:
 
 ```bash
-# Run all 123 tests once
+# Run all 138 tests once
 yarn test
 
 # Run tests in interactive watch mode

@@ -33,6 +33,8 @@ let globalAblyChannel: Ably.RealtimeChannel | null = null;
 let currentConnectedPairingId: string | null = null;
 let currentConnectedPlatform: 'figma' | 'penpot' | null = null;
 let activeRelayCalls = 0;
+let relayKeepAlive = false;
+let liveSubscriptionCount = 0;
 let idleCloseTimer: ReturnType<typeof setTimeout> | null = null;
 let sessionHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
 let relaySessionId: string | null = null;
@@ -64,9 +66,43 @@ function clearIdleCloseTimer(): void {
 
 function getRelaySessionId(): string {
   if (!relaySessionId) {
-    relaySessionId = globalThis.crypto.randomUUID();
+    relaySessionId = generateSessionId();
   }
   return relaySessionId;
+}
+
+/**
+ * UUID v4 that does not assume crypto.randomUUID: the Figma/FigJam plugin
+ * embed (and older embedded WebViews) expose crypto.getRandomValues but not
+ * randomUUID. Mirrors the fallback the companion UIs use for their tab ids.
+ */
+export function generateSessionId(): string {
+  const cryptoObj =
+    typeof globalThis !== 'undefined'
+      ? (globalThis as typeof globalThis & { crypto?: Crypto }).crypto
+      : undefined;
+  if (cryptoObj && typeof cryptoObj.randomUUID === 'function') {
+    try {
+      return cryptoObj.randomUUID();
+    } catch {
+      // Fall through to the manual build.
+    }
+  }
+  const bytes = new Uint8Array(16);
+  if (cryptoObj && typeof cryptoObj.getRandomValues === 'function') {
+    try {
+      cryptoObj.getRandomValues(bytes);
+    } catch {
+      // Fall through to Math.random.
+    }
+  }
+  for (let i = 0; i < 16; i++) {
+    if (bytes[i] === 0) bytes[i] = Math.floor(Math.random() * 256);
+  }
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
 function stopSessionHeartbeat(): void {
@@ -211,7 +247,9 @@ export function refreshRelayConnection(): void {
 
 function scheduleIdleClose(): void {
   clearIdleCloseTimer();
-  if (activeRelayCalls > 0 || !globalAblyClient) return;
+  // A live subscription (M3 relay-pull) pins the connection open even when
+  // no request/response is in flight.
+  if (relayKeepAlive || activeRelayCalls > 0 || !globalAblyClient) return;
   idleCloseTimer = setTimeout(() => {
     if (activeRelayCalls === 0) closeGlobalAblyConnection();
   }, RELAY_IDLE_CLOSE_MS);
@@ -311,6 +349,60 @@ async function getAblyConnection(
 
   startSessionHeartbeat();
   return globalAblyChannel;
+}
+
+/**
+ * M3 relay-pull: subscribe to live events the source companion publishes on
+ * its pairing channel (e.g. the Figma design companion pushing the current
+ * selection). The Miro-role token is subscribe-only, so the mirror listens
+ * without ever registering as a source in presence.
+ *
+ * The subscription keeps the Ably connection alive (skips the idle close)
+ * until the returned cleanup is called.
+ */
+export async function subscribeRelayLive(
+  pairingId: string,
+  platform: 'figma' | 'penpot',
+  eventName: string,
+  handler: (data: Record<string, unknown>) => void
+): Promise<() => void> {
+  const channel = await getAblyConnection(pairingId, platform);
+  liveSubscriptionCount += 1;
+  relayKeepAlive = true;
+  let active = true;
+  const listener = (msg: Ably.Message): void => {
+    if (!active) return;
+    const data = msg.data;
+    if (data && typeof data === 'object') {
+      handler(data as Record<string, unknown>);
+    }
+  };
+  try {
+    await channel.subscribe(eventName, listener);
+  } catch (err: unknown) {
+    liveSubscriptionCount = Math.max(0, liveSubscriptionCount - 1);
+    if (liveSubscriptionCount === 0) {
+      relayKeepAlive = false;
+      scheduleIdleClose();
+    }
+    throw err instanceof Error ? err : new Error(String(err));
+  }
+  let unsubscribed = false;
+  return () => {
+    if (unsubscribed) return;
+    unsubscribed = true;
+    active = false;
+    try {
+      void channel.unsubscribe(eventName, listener);
+    } catch {
+      // Ignore detach races.
+    }
+    liveSubscriptionCount = Math.max(0, liveSubscriptionCount - 1);
+    if (liveSubscriptionCount === 0) {
+      relayKeepAlive = false;
+      scheduleIdleClose();
+    }
+  };
 }
 
 export async function callRelay(body: RelayRequestBody): Promise<RelayJson> {

@@ -189,7 +189,7 @@
     <header>
       <div class="subtitle">SyncingBoard Companion</div>
       <h2>Figma Companion Relay</h2>
-      <div class="version-badge">v0.16.0 Community</div>
+      <div class="version-badge">v0.16.1 Community</div>
     </header>
 
     <div class="card">
@@ -258,7 +258,7 @@
     let reconnectTimeout = null;
 let currentPairingId = '';
 
-    // v0.16.0 Community: stable tab id (Design B). Seeded on window so the transfer
+    // v0.16.1 Community: stable tab id (Design B). Seeded on window so the transfer
     // handler and the token request always use the SAME id for this tab.
     const companionTabId = window.companionTabId || (window.companionTabId = (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'tab_' + Math.random().toString(36).substring(2, 10)));
     let evictedReconnectAttempts = 0;
@@ -662,8 +662,24 @@ let currentPairingId = '';
       }
 
       if (response.action === "selection-changed-locally") {
-        const name = response.data ? response.data.name : 'None';
+        const d = response.data ? response.data : null;
+        const name = d && d.name ? d.name : 'None';
         log(`Selected node: ${name}`);
+        // M3 relay-pull: stream the current Figma selection to the pairing
+        // channel so the FigJam app (or any destination client) can fill
+        // its Import card live — no button press needed.
+        if (ablyChannel && currentPairingId && d && d.id) {
+          ablyChannel.publish('selection', {
+            name: d.name || '',
+            id: d.id,
+            fileKey: d.fileKey || '',
+            ts: Date.now(),
+          }).then(() => {
+            log(`Selection published to ${currentPairingId}: ${name}`);
+          }).catch((e) => {
+            log(`Ably publish failed: ${e.message}`);
+          });
+        }
       }
 
       if (response.action === "selection-result") {
@@ -675,6 +691,18 @@ let currentPairingId = '';
         }
       }
     });
+  </script>
+  <script>
+    // Append the local/current build id (dev only): v0.16.1 Community -> v0.16.1 Community.local-<sha>
+    (function () {
+      var badge = document.querySelector('.version-badge');
+      if (!badge) return;
+      fetch('/api/build-id').then(function (r) { return r.json(); }).then(function (d) {
+        if (d && d.build) {
+          badge.textContent = badge.textContent.replace(' Community', '.' + d.build + ' Community');
+        }
+      }).catch(function () {});
+    })();
   </script>
 </body>
 </html>

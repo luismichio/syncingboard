@@ -5,7 +5,7 @@ description: Explore SyncingBoard's core capabilities in action with short video
 
 # SyncingBoard Features & Video Demos
 
-Explore how SyncingBoard bridges design tools (**Figma** & **Penpot**) with interactive canvas whiteboards (**Miro**) in real time.
+Explore how SyncingBoard bridges design tools (**Figma** & **Penpot**) with interactive canvas whiteboards (**Miro** and **FigJam**) in real time.
 
 ---
 
@@ -32,7 +32,7 @@ SyncingBoard's companion plugins stream active canvas selections in real time ov
 
 ## One-Click Sync & Multi-Copy Board Propagation
 
-Update selected screens in-place on Miro canvas. Toggle **"Also update all board copies"** to automatically search the canvas and propagate screen updates across every duplicate widget simultaneously.
+Update selected screens in-place on Miro canvas. Toggle **"Also update all board copies"** to scan the canvas and update every duplicate of that frame in one pass; **"Propagate format & scale to all copies"** additionally applies the group format/scale settings across all copies (the FigJam app shows "Propagate scale to all copies" — PNG-only there).
 
 <VideoTabs figma="coming-soon" penpot="coming-soon" />
 
@@ -72,7 +72,21 @@ Update image pixel content on Miro canvas while preserving custom layout dimensi
 
 Choose between crisp vector **SVG** exports (ideal for responsive text and icons with ~10x less bandwidth) or high-resolution **PNG** scaling (1x, 2x, and up to 4x for self-hosters).
 
+> **FigJam note:** the FigJam app target is PNG-only — FigJam rejects SVG image pixels, so SVG renders are rasterized to PNG in-browser before placement (1x = design size, 2x = double, crisp). Miro keeps both PNG and SVG.
+
 <VideoTabs figma="coming-soon" penpot="coming-soon" />
+
+---
+
+## FigJam App Target (M1)
+
+The same SyncingBoard panel runs inside **FigJam** (Figma's free-form whiteboard) as a first-class target alongside Miro, driven by the Figma plugin (`editorType: ["figma", "figjam"]`) hosting the hosted panel at `/figjam-mirror`.
+
+* **In-place updates:** tracked rectangles are located by `fileKey|nodeId` plugin data and updated in place — no duplicates.
+* **Replace Selected (selection-only):** rewrites whatever is selected at message time (tracked rectangles or foreign images).
+* **Penpot & Figma sources:** detect and import work the same as Miro (companion relay). "Detect Selection" reads the Figma/Penpot relay, never FigJam nodes.
+* **PNG-only:** SVG renders are rasterized to PNG before placement (FigJam rejects SVG image pixels).
+* **Import workflow:** 90s render cache with a "Reset image cache" link; Import/Replace buttons disable while placing.
 
 ---
 

@@ -5,7 +5,7 @@ description: Miro SDK v2 image widget integration, stateless metadata title sign
 
 # Target Adapters & Metadata Architecture
 
-> **Overview:** SyncingBoard writes synchronized design data to whiteboard platforms through target adapters. **Miro** is the primary target. **Mural**, **Microsoft Whiteboard**, **FigJam**, **Excalidraw**, and **tldraw** are under research/design.
+> **Overview:** SyncingBoard writes synchronized design data to whiteboard platforms through target adapters. **Miro** is the primary target; a **FigJam app** (M1) is shipped; **Mural**, **Microsoft Whiteboard**, **Excalidraw**, and **tldraw** are under research/design.
 
 ---
 
@@ -21,6 +21,21 @@ Miro is SyncingBoard's primary canvas target. SyncingBoard pushes screenshots to
 * **Sidebar UI:** Miro Web SDK `miro.board.ui.openPanel()` for the SyncingBoard control panel.
 * **Geometry Preservation (`preserveSize`):** Optional update mode (`preserveSize: true`) that pushes new image bytes to Miro without resetting custom canvas widget dimensions or aspect ratios.
 * **Widget Adoption & Retargeting (`replaceSelectedWidget`):** Enables adopting non-SyncingBoard images or retargeting existing SyncingBoard widgets to a new Figma/Penpot frame without changing widget IDs. Connectors, comments, links, and frame memberships are preserved.
+
+---
+
+## FigJam — App Target
+
+> **Status:** shipped (0.16.1, M1).
+
+FigJam (Figma’s whiteboard) is SyncingBoard’s second whiteboard target. The same Figma plugin (`editorType: ["figma", "figjam"]`) hosts a hosted panel (route `/figjam-mirror`, reusing the Miro sidebar components) that drives in-place updates through the plugin’s `figjam-place` command:
+
+* **In-place image swaps:** tracked rectangles are located by `fileKey|nodeId` plugin data and updated via IMAGE-fill swaps (or a clean rectangle swap when the node has children / is a component instance).
+* **Selection-driven sync:** cards list every selected tracked instance; `figjam-place` receives the selected `nodeIds` and updates only those.
+* **Replace Selected:** rewrites whatever is selected at message time (tracked rectangles or foreign images); selection-only (the earlier copy-propagation experiment was reverted per user decision).
+* **PNG-only:** FigJam rejects SVG image pixels, so SVG renders are rasterized to PNG in-browser before placement; the FigJam surface offers PNG format only.
+* **Propagate:** "Propagate scale to all copies" (Miro keeps "Propagate format & scale to all copies").
+* **Never a source:** "Detect Selection" reads the Figma/Penpot companion relay, not FigJam nodes.
 
 ---
 
@@ -60,7 +75,7 @@ SyncingBoard stores all design connection metadata directly in the Miro widget. 
 To prevent clutter in the Miro plugin sidebar, SyncingBoard groups identical selected canvas widgets (same `fileKey` + `nodeId` signature) into a single card:
 * **Count Badges:** Displays a count badge (e.g. `x3`) in the top-right corner of the group card.
 * **Batch Settings Updates:** Modifying resolution scale or format on the grouped card updates all matching widgets on the canvas simultaneously.
-* **Propagate Multi-Copy Sync:** Users can toggle **"Also update all board copies"** to automatically search the board and update every copy of that frame in a single click.
+* **Multi-Copy Sync:** **"Also update all board copies"** scans the canvas and updates every copy of that frame in a single click; **"Propagate format & scale to all copies"** (Miro; FigJam shows "Propagate scale to all copies") pushes the group format/scale settings to all copies as well.
 
 ---
 
@@ -70,6 +85,5 @@ To prevent clutter in the Miro plugin sidebar, SyncingBoard groups identical sel
 |---|---|---|---|
 | **Mural** | REST API | Sticky notes / images | Research needed — verify image POST endpoints |
 | **Microsoft Whiteboard** | Graph API (`graph.microsoft.com`) | Surface API image strokes | Research needed |
-| **FigJam** | Figma REST API | Same as Figma frames | Draft — leverages Figma REST API surface |
 | **Excalidraw** | Self-hosted REST (`POST /api/v2/scenes`) | Scene elements | Design — open API & self-host friendly |
 | **tldraw** | Embedded SDK | `TldrawImage` component | Design — programmable embedded canvas |

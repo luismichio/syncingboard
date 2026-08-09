@@ -42,14 +42,14 @@ export default function Home() {
             SyncingBoard
           </h1>
           <p className="text-sm font-semibold tracking-wider font-mono uppercase text-accent pt-1">
-            Stateless Figma/Penpot-Miro Pipeline
+            Stateless Design-Board Pipeline
           </p>
         </header>
 
         <p className="text-sm md:text-base text-text-muted leading-relaxed max-w-md">
           A database-free, self-hosted integration that syncs Figma and Penpot
-          frame screenshots into Miro in-place with zero duplicates. Connect your
-          workspace, select items on your board, and sync.
+          frame screenshots into Miro or FigJam in-place with zero duplicates.
+          Connect your workspace, select items on your board, and sync.
         </p>
 
         <div className="pt-4 flex flex-col sm:flex-row gap-4 w-full justify-center">

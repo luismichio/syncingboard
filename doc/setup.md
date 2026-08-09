@@ -82,6 +82,8 @@ To enable automatic canvas selection detection in the Miro sidebar without insta
 
 ---
 
+> **FigJam app:** The same Figma plugin also runs inside **FigJam** (Figma's whiteboard) — the manifest declares `editorType: ["figma", "figjam"]`, so no separate install is needed. In FigJam, the panel becomes the FigJam app UI (in-place updates, Replace Selected, Penpot sync; PNG-only).
+
 ## Source Adapter: Penpot (Skip if using Figma only)
 
 ### Install Penpot Companion Plugin
@@ -396,7 +398,7 @@ For testing and coding on your local machine (commands work on Windows, macOS, a
 Verify your setup and custom edits before deploying:
 
 ```bash
-yarn test     # Run 76+ automated Vitest unit & route integration tests
+yarn test   # Run 138 automated Vitest unit, adapter & route integration tests
 yarn lint     # Verify ESLint code standards and TypeScript types
 yarn build    # Validate production build compilation
 ```

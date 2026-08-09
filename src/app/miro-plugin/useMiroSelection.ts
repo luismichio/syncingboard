@@ -88,11 +88,13 @@ export function useMiroSelection(isInitMode: boolean | null) {
 
       if (isInitMode === true) {
         // Headless Initial mode: Register Toolbar Click
-        miro.board.ui.on('icon:click', async () => {
-          await miro.board.ui.openPanel({
-            url: '/miro-plugin',
+        try {
+          await miro.board.ui.on('icon:click', async () => {
+            await miro.board.ui.openPanel({ url: '/miro-plugin' });
           });
-        });
+        } catch (e) {
+          console.error('[MiroSelection] headless: icon:click registration FAILED', e);
+        }
       } else {
         // Panel Mode: Bind Selection Listeners
         const handleSelection = async () => {

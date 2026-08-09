@@ -120,7 +120,7 @@ The 0.15.2 release rebalances the *actual* consumers (companions are the persist
 1. **No Persistent Servers:** Runs on serverless Vercel endpoints and serverless Upstash Redis.
 2. **Zero Cloud Rendering Costs:** Shape rendering runs locally on the designer's GPU/CPU inside the Penpot browser tab — **$0 cloud compute cost**.
 3. **Zero Persistent Blob Storage:** Images flow through Vercel/Redis ephemerally into Miro — no S3 buckets or CDN storage required.
-4. **SVG-First Strategy:** Prefers vector SVG for Penpot exports, reducing bandwidth by 10x compared to high-resolution PNGs.
+4. **SVG-First Strategy:** Prefers vector SVG for Penpot exports, reducing bandwidth by 10x compared to high-resolution PNGs. *(Miro target. The FigJam app is PNG-only — SVG is rasterized client-side before placement.)*
 
 ---
 

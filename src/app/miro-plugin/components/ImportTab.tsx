@@ -22,10 +22,13 @@ useTauri?: boolean;
 figmaConnected?: boolean;
   preserveSize: boolean;
   setPreserveSize: (value: boolean) => void;
+  mirrorMode?: boolean;
+  onResetCache?: () => void;
 
   // Figma
   figmaToken: string | null;
   figmaInput: string;
+  figmaParseError?: string | null;
   figmaNodeInfo: FigmaNodeInfo | null;
   isDetectingLocal: boolean;
   parseFigmaLink: (url: string) => Promise<void>;
@@ -33,10 +36,8 @@ figmaConnected?: boolean;
   importFigmaScreen: (format: 'png' | 'svg', scale?: number) => Promise<void>;
 
   // Penpot
-  penpotInput: string;
   penpotNodeInfo: PenpotNodeInfo | null;
   isDetectingPenpotLocal: boolean;
-  parsePenpotLink: (url: string) => void;
   detectLocalPenpotSelection: () => Promise<void>;
   importPenpotScreen: (format: 'png' | 'svg', scale?: number) => Promise<void>;
 
@@ -49,6 +50,8 @@ figmaConnected?: boolean;
     format: 'png' | 'svg',
     scale: number
   ) => Promise<void>;
+  onClearFigmaNodeInfo?: () => void;
+  onClearPenpotNodeInfo?: () => void;
 }
 
 export function ImportTab({
@@ -68,20 +71,23 @@ useTauri,
 figmaConnected,
   preserveSize,
   setPreserveSize,
+  mirrorMode = false,
+  onResetCache,
   figmaToken,
   figmaInput,
+  figmaParseError,
   figmaNodeInfo,
   isDetectingLocal,
   parseFigmaLink,
   detectLocalFigmaSelection,
   importFigmaScreen,
-  penpotInput,
   penpotNodeInfo,
   isDetectingPenpotLocal,
-  parsePenpotLink,
   detectLocalPenpotSelection,
   importPenpotScreen,
   replaceSelectedWidget,
+  onClearFigmaNodeInfo,
+  onClearPenpotNodeInfo,
 }: ImportTabProps) {
   return (
     <div className="flex-grow flex flex-col gap-4">
@@ -91,6 +97,14 @@ figmaConnected,
         useTauri={useTauri}
         figmaConnected={figmaConnected}
       />
+      {mirrorMode && onResetCache ? (
+        <button
+          onClick={onResetCache}
+          className="self-start font-mono text-[9px] text-text-muted/60 hover:text-text-page underline underline-offset-2 cursor-pointer"
+        >
+          Reset image cache
+        </button>
+      ) : null}
       {hasMiroToken ? (
         <>
       <div className="flex rounded bg-bg-card p-0.5 border border-border-card">
@@ -149,6 +163,9 @@ figmaConnected,
                   }}
                   className="w-full text-xs p-2.5 bg-bg-card border border-border-card rounded text-text-page focus:outline-none focus:border-accent"
                 />
+                {figmaParseError && (
+                  <p className="text-[10px] font-mono text-red-600 dark:text-red-400 mt-1">{figmaParseError}</p>
+                )}
               </div>
 
               {figmaNodeInfo && (
@@ -173,6 +190,18 @@ figmaConnected,
                         <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
                       </svg>
                     </button>
+                    {onClearFigmaNodeInfo ? (
+                      <button
+                        onClick={onClearFigmaNodeInfo}
+                        className="shrink-0 flex items-center justify-center w-6 h-6 rounded hover:bg-bg transition cursor-pointer text-text-muted hover:text-red-500"
+                        title="Dismiss this import"
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <line x1="18" y1="6" x2="6" y2="18" />
+                          <line x1="6" y1="6" x2="18" y2="18" />
+                        </svg>
+                      </button>
+                    ) : null}
                   </div>
 
                   <FormatScaleSelector
@@ -181,6 +210,7 @@ figmaConnected,
                     availableScales={availableScales}
                     onFormatChange={setImportFormat}
                     onScaleChange={setImportScale}
+                    hideSvg={mirrorMode}
                   />
 
                   <button
@@ -205,7 +235,7 @@ figmaConnected,
                         </span>
                       </div>
                       <p className="ml-5 text-[8px] font-mono text-text-muted/50 leading-tight">
-                        Size locked. Crop resets — Miro API limitation.
+                        {mirrorMode ? 'Dimension and Crop locked.' : 'Size locked. Crop resets — Miro API limitation.'}
                       </p>
                     </label>
                   )}
@@ -229,10 +259,7 @@ figmaConnected,
                     REPLACE SELECTED
                   </button>
 
-                  <p className="text-[9px] font-mono text-text-muted/60 text-center mt-1.5">
-                    API syncs cannot be undone with Ctrl+Z
-                  </p>
-                </div>
+                                  </div>
               )}
             </div>
           ) : (
@@ -258,19 +285,6 @@ figmaConnected,
             </button>
           </div>
 
-          <div className="text-[10px] text-center text-text-muted">— or paste link manually —</div>
-
-          <div>
-            <h4 className="text-[10px] uppercase font-mono tracking-widest text-text-muted mb-2">
-              Paste Penpot Frame Link
-            </h4>
-            <input
-              type="text"
-              value={penpotInput}
-              onChange={(e) => parsePenpotLink(e.target.value)}
-              className="w-full text-xs p-2.5 bg-bg-card border border-border-card rounded text-text-page focus:outline-none focus:border-accent"
-            />
-          </div>
 
           {penpotNodeInfo && (
             <div className="p-3 bg-bg-card rounded border border-border-card mt-3">
@@ -283,17 +297,18 @@ figmaConnected,
                     File ID: {penpotNodeInfo.fileId}
                   </div>
                 </div>
-                <button
-                  onClick={() => parsePenpotLink(penpotInput)}
-                  className="shrink-0 flex items-center justify-center w-6 h-6 rounded hover:bg-bg-page transition cursor-pointer text-text-muted hover:text-text-page"
-                  title="Refresh node info from Penpot"
-                >
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="23 4 23 10 17 10" />
-                    <polyline points="1 20 1 14 7 14" />
-                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-                  </svg>
-                </button>
+                {onClearPenpotNodeInfo ? (
+                  <button
+                    onClick={onClearPenpotNodeInfo}
+                    className="shrink-0 flex items-center justify-center w-6 h-6 rounded hover:bg-bg transition cursor-pointer text-text-muted hover:text-red-500"
+                    title="Dismiss this import"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="18" y1="6" x2="6" y2="18" />
+                      <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                  </button>
+                ) : null}
               </div>
 
               <FormatScaleSelector
@@ -302,7 +317,8 @@ figmaConnected,
                 availableScales={availableScales}
                 onFormatChange={setImportFormat}
                 onScaleChange={setImportScale}
-              />
+                    hideSvg={mirrorMode}
+                  />
 
               <button
                 onClick={() => importPenpotScreen(importFormat, importScale)}
@@ -326,7 +342,7 @@ figmaConnected,
                     </span>
                   </div>
                   <p className="ml-5 text-[8px] font-mono text-text-muted/50 leading-tight">
-                    Size locked. Crop resets — Miro API limitation.
+                    {mirrorMode ? 'Dimension and Crop locked.' : 'Size locked. Crop resets — Miro API limitation.'}
                   </p>
                 </label>
               )}
@@ -350,10 +366,7 @@ figmaConnected,
                 REPLACE SELECTED
               </button>
 
-              <p className="text-[9px] font-mono text-text-muted/60 text-center mt-1.5">
-                API syncs cannot be undone with Ctrl+Z
-              </p>
-            </div>
+                          </div>
           )}
         </div>
       )}
