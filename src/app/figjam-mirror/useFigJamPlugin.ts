@@ -462,11 +462,11 @@ useEffect(() => {
             const displayName = msg.name || msg.key || '';
             setSyncStatus({
               message: msg.created
-                ? `Synced ${displayName}`
+                ? `✓ Synced ${displayName}`
                 : msg.swap
-                  ? `Synced ${displayName} — node replaced (old component removed)`
-                  : `Updated ${displayName}`,
-              type: msg.swap ? 'info' : 'success',
+                  ? `✓ Synced ${displayName} — node replaced (old component removed)`
+                  : `✓ Updated ${displayName}`,
+              type: 'success',
             });
           } else {
             setSyncStatus({ message: msg.error || 'Sync failed', type: 'error' });
