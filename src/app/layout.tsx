@@ -125,7 +125,6 @@ export default function RootLayout({
             }),
           }}
         />
-        <script src="https://miro.com/app/static/sdk/v2/miro.js" defer></script>
 
         <script
           dangerouslySetInnerHTML={{
