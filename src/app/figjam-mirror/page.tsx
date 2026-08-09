@@ -157,6 +157,7 @@ export default function FigJamPluginPage() {
             parseFigmaLink={hook.parseFigmaLink}
             detectLocalFigmaSelection={hook.detectLocalFigmaSelection}
             importFigmaScreen={hook.importFigmaScreen}
+            mirrorMode
             penpotInput={hook.penpotInput}
             penpotNodeInfo={hook.penpotNodeInfo}
             isDetectingPenpotLocal={hook.isDetectingPenpotLocal}

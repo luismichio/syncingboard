@@ -154,7 +154,7 @@ export function SyncTab({
                 </span>
               </div>
               <p className="ml-5 text-[8px] font-mono text-text-muted/50 leading-tight">
-                Size locked. Crop resets — Miro API limitation.
+                {mirrorMode ? 'Crop locked.' : 'Size locked. Crop resets — Miro API limitation.'}
               </p>
             </label>
 

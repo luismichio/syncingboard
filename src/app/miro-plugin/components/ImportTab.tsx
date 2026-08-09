@@ -22,6 +22,7 @@ useTauri?: boolean;
 figmaConnected?: boolean;
   preserveSize: boolean;
   setPreserveSize: (value: boolean) => void;
+  mirrorMode?: boolean;
 
   // Figma
   figmaToken: string | null;
@@ -71,6 +72,7 @@ useTauri,
 figmaConnected,
   preserveSize,
   setPreserveSize,
+  mirrorMode = false,
   figmaToken,
   figmaInput,
   figmaParseError,
@@ -226,7 +228,7 @@ figmaConnected,
                         </span>
                       </div>
                       <p className="ml-5 text-[8px] font-mono text-text-muted/50 leading-tight">
-                        Size locked. Crop resets — Miro API limitation.
+                        {mirrorMode ? 'Crop locked.' : 'Size locked. Crop resets — Miro API limitation.'}
                       </p>
                     </label>
                   )}
@@ -359,7 +361,7 @@ figmaConnected,
                     </span>
                   </div>
                   <p className="ml-5 text-[8px] font-mono text-text-muted/50 leading-tight">
-                    Size locked. Crop resets — Miro API limitation.
+                    {mirrorMode ? 'Crop locked.' : 'Size locked. Crop resets — Miro API limitation.'}
                   </p>
                 </label>
               )}
