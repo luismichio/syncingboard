@@ -47,7 +47,7 @@ SyncingBoard is designed with a **zero-persistent-storage, cloud-relay-first** a
 
 - Legacy Tauri bridge routes (WebSocket, local polling, local export triggers) have been pruned — the desktop app now only serves the capability-extender role.
 - Temporary/scratch files (`.html` stubs, `.txt` notes) are excluded from production builds.
-- **Miro SDK is origin-gated** — miro.js loads only when the page is embedded under a Miro origin (`location.ancestorOrigins` ending in `miro.com`/`miro-app.io`, with a `document.referrer` fallback); the FigJam app, dashboard, docs, and marketing tabs never receive the SDK.
+- **Miro SDK is delivered globally but inert outside Miro** — miro.js is loaded on every page via a plain `<script defer>` in `src/app/layout.tsx`; it is only ever **booted** (`miro.boot` + app config, Miro SDK v2) by the `miro-plugin` page under a live Miro plugin environment. Dashboard, docs, marketing, companions, and the FigJam app receive the bundle but never instantiate a connected session. Origin-ancestry gating of the script itself was previously attempted, but every variant broke the Miro app and was reverted.
 - **FigJam app is destination-only** — it subscribes as a read-only client on `figma:<pairing>` channels and never registers in the source presence set, so it can never impersonate a design-source companion.
 
 ---

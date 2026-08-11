@@ -103,6 +103,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Archived the previous run of `figjam-plugin/ui.html` FigJam stub (replaced by the hosted route).
 - `.gitignore` now excludes local build logs + scratch scripts.
 - EOL normalization of `useFigJamPlugin.ts` and `usePenpotImporter.ts` — mixed CRLF/LF line endings collapsed to pure LF (large diffs shrank to a few lines, keeping history reviewable) during the URL-feature churn in this release.
+- Removed the dead `src/lib/sync/penpotUrlParser.ts` + its test (unreferenced since the Penpot URL removal above).
 
 ## [0.16.0] - 2026-08-07
 ### Added

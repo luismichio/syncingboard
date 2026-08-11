@@ -398,7 +398,7 @@ For testing and coding on your local machine (commands work on Windows, macOS, a
 Verify your setup and custom edits before deploying:
 
 ```bash
-yarn test   # Run 138 automated Vitest unit, adapter & route integration tests
+yarn test   # Run 132 automated Vitest unit, adapter & route integration tests
 yarn lint     # Verify ESLint code standards and TypeScript types
 yarn build    # Validate production build compilation
 ```

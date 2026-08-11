@@ -1,6 +1,6 @@
 ---
 title: Testing & Quality Assurance
-description: Technical breakdown of SyncingBoard's 138 automated Vitest tests across 19 files covering token security, rate limiting, URL parsers, relay fairness, target adapters, and API route handlers.
+description: Technical breakdown of SyncingBoard's 132 automated Vitest tests across 18 files covering token security, rate limiting, URL parsers, relay fairness, target adapters, and API route handlers.
 ---
 
 # Testing & Quality Assurance
@@ -25,14 +25,13 @@ graph TD
 
 ## Test Suites Breakdown
 
-SyncingBoard includes **138 passing automated tests** across 19 specialized test files:
+SyncingBoard includes **132 passing automated tests** across 18 specialized test files:
 
 | Test File | Category | Focus Area & Assertions |
 | :--- | :--- | :--- |
 | **`src/lib/tokens.test.ts`** | Security | Cryptographic token security, SHA-256 one-way hashing (`tok:sha256(token)`), pairing ID generation, and entropy validation. |
 | **`src/lib/docs.test.ts`** | Docs Engine | Document indexing, case-insensitive slug resolution (`/docs/LICENSE`), heading extraction, and word counts. |
 | **`src/lib/sync/figmaUrlParser.test.ts`** | Parsers | Regex extraction of `fileKey` and `nodeId` from Figma web URLs, desktop app links, and frame selection parameters. |
-| **`src/lib/sync/penpotUrlParser.test.ts`** | Parsers | Regex extraction of `fileId`, `pageId`, and `shapeId` from Penpot workspace URLs. The Penpot URL feature was removed in 0.16.1 — the parser is retained as a pure utility, no longer wired into import flows. |
 | **`src/lib/rate-limit.test.ts`** | Rate Limiting | Sliding-window algorithm, token-hash caller identification, daily budget counters, and `429 Too Many Requests` JSON body + `Retry-After` headers. |
 | **`src/app/api/oauth/store/route.test.ts`** | OAuth Handshake | Temporary 300s Redis OAuth state store (`POST /api/oauth/store`) and one-time token retrieval/deletion (`GET` + `DEL`). |
 | **`src/app/api/docs/search/route.test.ts`** | Search Engine | Full-text search endpoint (`GET /api/docs/search?q=...`), relevancy scoring, section deep-linking, and term highlighting. |
@@ -56,7 +55,7 @@ SyncingBoard includes **138 passing automated tests** across 19 specialized test
 Run the test suite during development using the following commands:
 
 ```bash
-# Run all 138 tests once
+# Run all 132 tests once
 yarn test
 
 # Run tests in interactive watch mode
