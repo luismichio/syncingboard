@@ -186,7 +186,7 @@ export function SyncTab({
                 <span className="text-[10px] text-text-muted font-mono">
                   {mirrorMode
                     ? 'Propagate scale to all copies'
-                    : 'Propagate format &amp; scale to all copies'}
+                    : 'Propagate format & scale to all copies'}
                 </span>
               </label>
             )}
