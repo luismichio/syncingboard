@@ -105,6 +105,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - `.gitignore` now excludes local build logs + scratch scripts.
 - EOL normalization of `useFigJamPlugin.ts` and `usePenpotImporter.ts` — mixed CRLF/LF line endings collapsed to pure LF (large diffs shrank to a few lines, keeping history reviewable) during the URL-feature churn in this release.
 - Removed the dead `src/lib/sync/penpotUrlParser.ts` + its test (unreferenced since the Penpot URL removal above).
+- **Dependency resolutions made Yarn-classic-compatible (Vercel build fix)** — the descriptor-scoped `brace-expansion@npm:^1.1.7`/`@npm:^5.0.5` resolution keys are valid Yarn Berry syntax but break `yarn install` on Vercel (which runs Yarn classic and re-resolves the tree from scratch: `DEP0170 The URL npm:^1.1.7@npm:1.1.18 is invalid` → `registry.yarnpkg.com/1.1.18: Not found`). The committed Yarn-4 lockfile already pins the patched versions (brace-expansion 1.1.18 + 5.0.9), so the keys are removed entirely: Yarn classic's fresh resolution also picks the latest patched versions (both satisfy the minimatch ranges), and `yarn npm audit` stays at 0.
 
 ## [0.16.0] - 2026-08-07
 ### Added
