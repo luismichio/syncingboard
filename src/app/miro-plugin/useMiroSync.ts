@@ -121,7 +121,17 @@ return;
 
       if (syncAllCopies) {
         const allItems = await miro.board.get();
+        // Sweep copies ONCE per unique frame key. Selecting two copies of the
+        // same frame must not re-enumerate (and re-update) the whole copy set
+        // per selection — that multiplied updates by the selection size (e.g.
+        // 2 selected x 9 copies = 18 update calls instead of 9) and blew past
+        // the 10/min Miro image-update window.
+        const sweptKeys = new Set<string>();
         for (const selected of selectedItems) {
+          const sweepKey = `${selected.platform || 'figma'}|${selected.fileKey}|${selected.nodeId}`;
+          if (sweptKeys.has(sweepKey)) continue;
+          sweptKeys.add(sweepKey);
+
           const matches = allItems.filter(item => {
             if (item.type === 'image' && item.title) {
               const tag = selected.platform === 'penpot' ? 'PenpotSync' : 'FigmaSync';
