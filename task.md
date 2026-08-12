@@ -1,3 +1,17 @@
+# Task: Create Design System Architecture & UI Inconsistency Audit (`doc/design-system.md`)
+
+## Phase 1: Audit & Token Mapping
+- [x] Audit global CSS tokens (`src/app/globals.css`), Miro plugin components (`src/app/miro-plugin/components/*`), and Companion UIs (`figma-plugin/ui.html`, `public/figjam-companion-ui.html`).
+- [x] Identify token, typography, status indicator, border-radius, and accessibility gaps across Miro vs. FigJam/Companion surfaces.
+
+## Phase 2: Create Design System Documentation
+- [x] Create `doc/design-system.md` containing the core design system tokens, typography rules, component guidelines, icon specs (Lucide 2px), accessibility rules, and surface gap audit.
+
+## Phase 3: Verification & Changelog
+- [x] Update `doc/changelog.md` with `doc/design-system.md` documentation addition under `[Unreleased]`.
+
+---
+
 # Task: Implement Interactive Quick Start Section & Vercel Deploy Integration on `/docs`
 
 ## Phase 1: Planning & Component Design
