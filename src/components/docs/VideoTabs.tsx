@@ -32,6 +32,16 @@ export default function VideoTabs({ figma, penpot }: VideoTabsProps) {
     );
   };
 
+  // Single-video mode: when only one source is provided (no tab pairing),
+  // render the video directly without the Figma/Penpot tab bar — used for
+  // general showcase videos that don't belong to a specific target column.
+  if (penpot === undefined && figma !== undefined) {
+    return <div className="my-6">{renderContent(figma, "Video Demo")}</div>;
+  }
+  if (figma === undefined && penpot !== undefined) {
+    return <div className="my-6">{renderContent(penpot, "Video Demo")}</div>;
+  }
+
   return (
     <div className="my-6 border border-border-card bg-bg-card rounded-xl overflow-hidden shadow-sm transition-all">
       <div className="flex items-center border-b border-border-card bg-bg-page/50 px-3 py-2 gap-2">

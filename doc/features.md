@@ -7,6 +7,8 @@ description: Explore SyncingBoard's core capabilities in action with short video
 
 Explore how SyncingBoard bridges design tools (**Figma** & **Penpot**) with interactive canvas whiteboards (**Miro** and **FigJam**) in real time.
 
+<VideoTabs figma="https://www.youtube-nocookie.com/embed/7vckK-sSsOE" />
+
 ---
 
 ## Getting Started - Figma & Penpot Setup
