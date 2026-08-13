@@ -38,7 +38,6 @@ Miro is the whiteboard target. Both Figma and Penpot sync go through Miro.
    - `boards:read`
    - `boards:write`
 5. Click **Create App** and copy your **Client ID** and **Client Secret**.
-
 ---
 
 ## Source Adapter: Figma (Skip if using Penpot only)

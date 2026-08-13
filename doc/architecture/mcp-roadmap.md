@@ -55,6 +55,37 @@ async function callLovableTool(accessToken: string, tool: string, args: object) 
 
 SyncingBoard can act as an **MCP server** — exposing its own tools to AI agents (Claude Desktop, Cursor, pi, custom scripts).
 
+### Stateless MCP Architecture (SEP 2575 & Cloudflare/Google Alignment)
+
+> **Specification Standard:** SEP 2575 (Stateless MCP)
+> **Target Endpoint:** `src/app/api/mcp/route.ts` (Next.js App Router Serverless Route)
+
+SyncingBoard's MCP Server implementation adheres to **Stateless MCP (SEP 2575)**. Instead of maintaining long-lived SSE connections or transport-level session memory, SyncingBoard handles MCP requests as self-contained, stateless HTTP calls over **Streamable HTTP**.
+
+#### Architectural Key Points
+1. **Serverless-Native (Vercel)**: Implemented as a single serverless API route (`/api/mcp`) on Next.js App Router without requiring dedicated VMs or persistent container sockets.
+2. **Scale to Zero**: Zero idle compute cost; executes on-demand when invoked by AI agents.
+3. **Application-Layer State**: Domain state (e.g. `pairingId`, `boardId`, OAuth tokens) is passed within explicit request payloads or headers, backed by ephemeral Upstash Redis caching (180s–300s TTL).
+
+### Multi-MCP Chaining Architecture
+
+AI Agents (Claude Desktop, Cursor, Antigravity) act as the universal orchestrator between local design MCPs (Figma Desktop MCP, Penpot MCP) and SyncingBoard's cloud serverless MCP API:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Agent as AI Agent (Claude / Cursor / Antigravity)
+    participant FigmaMCP as Figma Desktop MCP (Local)
+    participant SBMCP as SyncingBoard Stateless MCP (/api/mcp)
+    participant Miro as Miro Board (Web SDK / API)
+
+    Agent->>FigmaMCP: get_active_selection()
+    FigmaMCP-->>Agent: { fileKey: "aB3k9X", nodeId: "1:42", name: "Header" }
+    Agent->>SBMCP: sync_frame({ fileKey: "aB3k9X", nodeId: "1:42", boardId: "mB_..." })
+    SBMCP->>Miro: Render & update canvas widget
+    SBMCP-->>Agent: { status: "success", widgetId: "w_123" }
+```
+
 ### Exposed Tools
 | Tool | Description | Example Agent Prompt |
 |---|---|---|
@@ -69,12 +100,12 @@ SyncingBoard can act as an **MCP server** — exposing its own tools to AI agent
 ```mermaid
 graph TD
   agents["AI Agents<br/>(Claude / Cursor / pi)"]
-  server["SyncingBoard MCP Server<br/>Exposes: sync_frame, list_*, get_status"]
+  server["SyncingBoard MCP Server<br/>(Stateless /api/mcp)<br/>Exposes: sync_frame, list_*, get_status"]
   figma["Figma REST API"]
   lovable["Lovable MCP HTTP"]
   stitch["Stitch MCP stdio"]
 
-  agents -->|"MCP Client (stdio / HTTP)"| server
+  agents -->|"Stateless Streamable HTTP (SEP 2575)"| server
   server -->|"Internal Adapters"| figma
   server -->|"Internal Adapters"| lovable
   server -->|"Internal Adapters"| stitch

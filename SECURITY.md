@@ -29,6 +29,12 @@ SyncingBoard is designed with a **zero-persistent-storage, cloud-relay-first** a
 - **OAuth CSRF protection** via cryptographically secure `state` parameters generated with `window.crypto.getRandomValues()`. State values are validated server-side before accepting the callback.
 - **Pairing IDs** (design-source ↔ whiteboard link, incl. the FigJam app) are read-only fields in the UI, generated client-side via crypto-secure randomness (`window.crypto.getRandomValues()`, per `src/lib/sync/pairingId.ts`, `sb_` + 16 chars), so users cannot inject custom values. **They are bearer access keys:** anyone who holds an ID can read from an open, connected Figma/Penpot companion. For **Penpot** the pairing ID is the *only* credential (no OAuth); for **Figma**, imports and syncs additionally require the user's own Figma OAuth. Treat IDs like secrets, use one per board/companion pair, and disconnect companions when done — see `doc/setup.md` "Security & Pairing Best Practices". An optional per-pairing passphrase (PIN) to protect sensitive pairings is **planned** for a future release.
 
+### Canvas Metadata & Cross-Board Security
+
+- **Metadata minimization on canvas widgets** — SyncingBoard attaches lightweight reference metadata to canvas elements (e.g., Miro images) to maintain live synchronization with Figma and Penpot. This metadata contains only public/structural identifiers (`fileKey`, `nodeId`, `format`, `scale`, `platform`). It **never** stores OAuth tokens, API keys, or secret credentials.
+- **Cross-board & external safety** — If a synchronized element is copied to another board, workspace, or external account, unauthorized users cannot pull live design updates. Every sync request enforces Figma/Penpot OAuth 2.0 permissions server-side: if the user initiating the sync lacks access to the target `fileKey`, the upstream API rejects the request (`403 Forbidden` / `404 Not Found`).
+- **Resource identifiers vs. credentials** — File keys (e.g., Figma `fileKey`) are non-secret resource identifiers (equivalent to Google Doc IDs or URL path segments). Knowing a `fileKey` grants zero access without an authenticated account authorized in the source platform's Access Control List (ACL).
+
 ### API Protection
 
 - **Community Plan rate limiting** — per-user token-based throttling on all sync endpoints. Identifiers are hashed with SHA-256 to avoid storing raw tokens in rate-limit counters. A global daily backstop (500 syncs/day) prevents free-tier budget exhaustion regardless of attacker IP cycling.
@@ -63,6 +69,7 @@ SyncingBoard's architecture is designed for **data minimization by default**, ma
 | OAuth tokens (Figma, Miro) | Browser memory (React state) + Upstash Redis (300s TTL) | Session / 5 minutes | Yes (could identify a user) |
 | Penpot pairing IDs | Browser memory + Redis relay result | Session / 180s TTL | Indirect (linkable to a session) |
 | Image content (frame screenshots) | Vercel function memory + Upstash Redis (180s TTL) + Miro API | Ephemeral (< 180s) | No (design frame, not personal) |
+| Canvas widget metadata (fileKey, nodeId) | Miro board item storage (Miro API) | Retained with Miro widget | No (public structural reference) |
 | Client IP addresses | Vercel edge logs (standard HTTP logs) | Retained per Vercel's policy | Yes |
 | User agent, request paths | Vercel function logs | Retained per Vercel's policy | No |
 

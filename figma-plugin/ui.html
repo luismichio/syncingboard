@@ -3,11 +3,34 @@
 <head>
 <meta charset="utf-8">
 <style>
+:root {
+  --bg-page: #0A0A0A;
+  --bg-card: #121212;
+  --border-card: #1F1F1F;
+  --text-page: #FAF9F5;
+  --text-muted: #9A9997;
+  --accent: #01C8F1;
+  --pulse-bg: rgba(1, 200, 241, 0.08);
+  --pulse-border: rgba(1, 200, 241, 0.2);
+}
+
+.figma-light {
+  --bg-page: #FAF9F5;
+  --bg-card: #F2EFE9;
+  --border-card: #E0DBD0;
+  --text-page: #0A0A0A;
+  --text-muted: #5E5E5E;
+  --accent: #00A2C9;
+  --pulse-bg: rgba(0, 162, 201, 0.08);
+  --pulse-border: rgba(0, 162, 201, 0.2);
+}
+
 body, html {
   margin: 0;
   padding: 0;
   height: 100%;
-  background-color: #0b0c0d;
+  background-color: var(--bg-page);
+  color: var(--text-page);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   overflow: hidden;
   display: flex;
@@ -16,69 +39,61 @@ body, html {
 iframe {
   flex: 1;
   border: none;
-  background-color: #0b0c0d;
-}
-/* Figma Light Theme Override */
-.figma-light body {
-  background-color: #f9fafb;
-}
-.figma-light iframe {
-  background-color: #f9fafb;
+  background-color: var(--bg-page);
 }
 
-/* FigJam mode: the mirrow fits in a taller plugin window — resized from
-   code.js (figma.ui.resize) for the FigJam editor only, Figma untouched. */
 /* Optional preview-host footer (testing before production / self-hosting) */
 .host-footer {
-  border-top: 1px solid #1f232a;
+  border-top: 1px solid var(--border-card);
   padding: 6px 10px 8px;
-  background-color: #0b0c0d;
+  background-color: var(--bg-page);
   font-size: 10px;
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
-.figma-light .host-footer {
-  border-top-color: #e5e7eb;
-  background-color: #f9fafb;
-}
 #host-toggle {
   background: none;
   border: none;
   padding: 0;
-  color: #9ca3af;
+  color: var(--text-muted);
   cursor: pointer;
   font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   text-align: left;
+  transition: color 0.15s ease;
 }
-.figma-light #host-toggle { color: #6b7280; }
+#host-toggle:hover {
+  color: var(--text-page);
+}
 #host-panel { display: flex; flex-direction: column; gap: 6px; }
 #host-panel[hidden] { display: none; }
 #host-input {
   width: 100%;
   box-sizing: border-box;
-  background-color: #121417;
-  border: 1px solid #1f232a;
-  border-radius: 4px;
-  color: #f3f4f6;
+  background-color: var(--bg-page);
+  border: 1px solid var(--border-card);
+  border-radius: 6px;
+  color: var(--text-page);
   padding: 5px 8px;
   font-size: 11px;
   font-family: monospace;
 }
 .figma-light #host-input {
-  background-color: #ffffff;
-  color: #111827;
-  border-color: #e5e7eb;
+  background-color: #FFFFFF;
 }
-#host-input:focus { outline: none; border-color: #01C8F1; }
-#host-hint { font-size: 9px; color: #9ca3af; line-height: 1.4; }
+#host-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+#host-hint { font-size: 9px; color: var(--text-muted); line-height: 1.4; }
 #host-error { font-size: 9px; color: #ef4444; min-height: 12px; }
 #host-error.ok { color: #10b981; }
 .host-row { display: flex; gap: 6px; }
-/* FigJam mode (target / Miro-mirror) notice */
+
+/* FigJam mode notice */
 #figjam-notice {
   flex: 1;
   display: flex;
@@ -98,9 +113,9 @@ iframe {
 .fj-badge {
   display: inline-block;
   margin: 0 auto;
-  background: rgba(1, 200, 241, 0.14);
-  color: #01C8F1;
-  border: 1px solid rgba(1, 200, 241, 0.35);
+  background: var(--pulse-bg);
+  color: var(--accent);
+  border: 1px solid var(--pulse-border);
   border-radius: 999px;
   padding: 3px 10px;
   font-size: 9px;
@@ -109,31 +124,35 @@ iframe {
   letter-spacing: 0.08em;
 }
 .fj-title {
-  color: #f3f4f6;
+  color: var(--text-page);
   font-size: 13px;
   font-weight: 600;
   line-height: 1.4;
 }
 .fj-note {
-  color: #9ca3af;
+  color: var(--text-muted);
   font-size: 11px;
   line-height: 1.55;
 }
-.figma-light #figjam-notice .fj-title { color: #111827; }
-.figma-light #figjam-notice .fj-note { color: #4b5563; }
+
 .host-footer button {
-  background-color: #121417;
-  color: #f3f4f6;
-  border: 1px solid #1f232a;
-  border-radius: 4px;
+  background-color: var(--bg-card);
+  color: var(--text-page);
+  border: 1px solid var(--border-card);
+  border-radius: 6px;
   padding: 4px 8px;
   font-size: 10px;
   cursor: pointer;
+  transition: opacity 0.15s ease;
 }
-.figma-light .host-footer button {
-  background-color: #ffffff;
-  color: #111827;
-  border-color: #e5e7eb;
+.host-footer button#host-save {
+  background-color: var(--accent);
+  color: #062026;
+  border: none;
+  font-weight: 600;
+}
+.figma-light .host-footer button#host-save {
+  color: #FAF9F5;
 }
 .host-footer button:hover { opacity: 0.9; }
 </style>
