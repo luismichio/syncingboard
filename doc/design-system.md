@@ -1,16 +1,16 @@
 ---
-title: "SyncingBoard Design System Architecture & Specifications"
+title: "Design System Architecture & Specifications"
 description: "Core design tokens, typography rules, component standards, and multi-surface guidelines across Miro, FigJam, Companion, and Web Documentation interfaces."
 ---
 
-# SyncingBoard Design System Architecture & Specifications
+# Design System Architecture & Specifications
 
 > **Source of Truth for Visuals, UI Components, & Documentation Aesthetics**  
 > **Philosophy:** "Systems, Not Patches." All user interface components across Miro, FigJam, Companion, and Web surfaces must strictly adhere to established design system tokens (`var(--accent)`, `var(--bg-card)`, `var(--border-card)`).
 
 ---
 
-## 🎨 Core Design Tokens
+## Core Design Tokens
 
 SyncingBoard enforces a clean, modern dark-mode-first aesthetic with system-matching light mode fallbacks across all surfaces.
 
@@ -39,7 +39,7 @@ SyncingBoard enforces a clean, modern dark-mode-first aesthetic with system-matc
 
 ---
 
-## 🔤 Typography & Font Rules
+## Typography & Font Rules
 
 1. **Interface Hierarchy**: Clean system sans-serif font stack for headings, navigation, settings, and standard body text:
    ```css
@@ -47,45 +47,52 @@ SyncingBoard enforces a clean, modern dark-mode-first aesthetic with system-matc
    ```
 2. **Technical & Data Elements**: Monospace font stack for Node IDs, Pairing Keys (`sb_...`), scale multipliers, file keys, code blocks, and telemetry logs:
    ```css
-   font-family: ui-monospace, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
    ```
 3. **Accessibility**: All text colors must achieve **WCAG AA compliance ($\ge 4.5:1$ contrast ratio)** against their container background.
 
 ---
 
-## 🧱 Component System Specifications
+## Component System Specifications
 
 ### 1. Buttons & Interactive Controls
 * **Primary Button**: Background `var(--accent)`, text `#062026` (dark mode) / `#FAF9F5` (light mode), `font-weight: 600`, `border-radius: 6px` or `8px`. Focus ring `2px solid var(--accent)`.
 * **Secondary Button**: Background `var(--bg-card)`, border `1px solid var(--border-card)`, text `var(--text-page)`.
-* **Ghost / Dismiss Button**: Borderless or subtle border, text `var(--text-muted)` hovering to `var(--text-page)`.
+* **Compact Action Button (`CONNECT` / `COPY ID`)**: `font-size: 9px; font-family: monospace; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--accent); border: 1px solid rgba(1, 200, 241, 0.4); border-radius: 4px; padding: 2px 6px; background: transparent;`. Hover state fills with `var(--accent)`.
+* **Subtle Link Action (`DISCONNECT`)**: Borderless, `font-size: 9px; font-family: monospace; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; text-decoration: underline; color: var(--text-muted); background: transparent;`. Hover transitions to `var(--accent)`.
 
 ### 2. Status Indicators & Badges
 * **Pulsing Connection Dot**: `width: 8px; height: 8px; border-radius: 50%`.
-  * **Connected / Idle**: Cyan (`var(--accent)`).
-  * **Syncing / Rate-Limit Cooldown**: Amber (`#f59e0b`).
-  * **Error / Disconnected**: Red (`#ef4444`).
-* **Relay Capacity Banner**: Displays slot usage (e.g., `Community Relay: 14/40 Slots`) with manual refresh icon (`↻`) and cooldown timer.
+  * **Connected / Active**: Green (`#22C55E`).
+  * **Connecting / Standby**: Amber (`#EAB308`) with smooth `pulse` keyframe animation.
+  * **Disconnected / Error**: Red (`#EF4444`).
+* **Status Text Labels**: Rendered clean without surrounding box or pill outlines (`font-size: 9px; font-family: monospace; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase;`).
+  * **Connected Text**: `#4ADE80` (dark) / `#16A34A` (light).
+  * **Connecting Text**: `#FBBF24` (dark) / `#D97706` (light).
+  * **Disconnected / Unknown Text**: `var(--text-muted)`.
 * **No Emojis**: Emojis are strictly forbidden in user-facing UI screens. Vector outline icons (Lucide, `2px` stroke weight) must be used.
 
 ### 3. Card Containers & Inputs
 * **Card Container**: Background `var(--bg-card)`, border `1px solid var(--border-card)`, radius `8px`, padding `12px` (standard) or `8px` (compact).
-* **Form Inputs**: Background `var(--bg-card)`, border `1px solid var(--border-card)`, text `var(--text-page)`, monospace for IDs (`sb_...`). Focus state `outline: none; border-color: var(--accent)`.
+* **Form Inputs**: Background `var(--bg-page)` (in Dark Mode: `#0A0A0A` for recessed depth) / `#FFFFFF` (in Light Mode for clean contrast), border `1px solid var(--border-card)`, text `var(--text-page)`, monospace for IDs (`sb_...`). Focus state `outline: none; border-color: var(--accent)`.
+* **Input Action Icons**: Embedded eye toggle icons for passwords/secrets (`width: 14px; height: 14px; color: var(--text-muted)` hovering to `var(--text-page)`).
 
-### 4. Segmented Selectors & Options (`FormatScaleSelector`)
+### 4. Segmented Selectors & Theme Toggle
 * **Format Switcher**: Compact pill container (PNG vs SVG), `font-size: 11px`, active segment highlighted with `var(--accent)`.
 * **Scale Selector**: Monospace dropdown (`1x`, `2x`, `3x`, `4x`), compact padding (`4px 8px`).
+* **Theme Toggle (`ThemeToggle`)**: 3-state cycle button (`System` -> `Light` -> `Dark` -> `System`) featuring Monitor, Sun, and Moon vector icons with uppercase monospace label.
 
 ### 5. Header & Navigation (`AppHeader`, `TabNav`)
-* **Header Logo**: Brand dot (`8px` `--accent`), title sans-serif (`font-weight: 700`), version subtitle in monospace (`v0.16.1 Community`).
-* **Tab Navigation Bar**: 3 main tabs (`Import`, `Sync`, `Settings`) with `var(--accent)` bottom border indicator on active tab.
+* **Header Logo**: Vector logo mask (`24px * 24px` `--accent`), title sans-serif (`font-size: 20px; font-weight: 700; letter-spacing: -0.025em; color: var(--accent)`), subtitle in muted sans-serif (`10px text-text-muted`).
+* **Tab Navigation Bar**: Uppercase monospace tabs (`text-xs font-mono tracking-wider font-semibold`) with `2px` solid bottom indicator (`var(--accent)` for active tab, transparent for inactive).
 
-### 6. Board Status Footer (`BoardStatusFooter`)
-* **Fixed Bottom Bar**: Border top `1px solid var(--border-card)`, monospace status summary, tagline *"Stateless Design-Board Pipeline"*.
+### 6. Footers & Versioning (`VersionStamp`, `BoardStatusFooter`)
+* **Version Footer (`VersionStamp`)**: Placed at bottom of panel (`font-size: 9px; font-family: monospace; color: var(--text-muted); opacity: 0.5; padding-top: 12px; border-top: 1px solid var(--border-card)`).
+* **Board Status Footer**: Fixed bottom bar across board sync views, monospace status summary, tagline *"Stateless Design-Board Pipeline"*.
 
 ---
 
-## 🌐 Web Documentation & Portal Components (`/docs`)
+## Web Documentation & Portal Components (`/docs`)
 
 ### 1. Code Blocks & Inline Snippets
 * **Fenced Code Block (`<pre>`)**: Background `var(--bg-code-block)`, border `1px solid var(--border-code)`, radius `12px`, padding `1.25rem 1.5rem`.
@@ -105,11 +112,11 @@ SyncingBoard enforces a clean, modern dark-mode-first aesthetic with system-matc
 
 ---
 
-## 📐 Multi-Surface Parity Guidelines
+## Multi-Surface Parity Guidelines
 
-| Surface | Width Context | Theme Support | Primary CSS Source |
+| Surface | Width Context | Theme Support | Primary Architecture / Source |
 | :--- | :--- | :--- | :--- |
-| **Miro Sidebar Plugin** | Compact (320px–400px) | Light / Dark System | `src/app/globals.css` + `src/app/miro-plugin` |
+| **Miro Sidebar Plugin** | Compact (320px-400px) | Light / Dark System | `src/app/globals.css` + `src/app/miro-plugin` |
 | **FigJam App / Mirror** | Canvas Overlay | Light / Dark System | `src/app/figjam-mirror` + `figma-plugin/ui.html` |
-| **Companion Plugins** | Plugin Panel | Light / Dark System | `public/figjam-companion-ui.html` |
+| **Companion Plugins (Figma & Penpot)** | Compact (320px * 650px) | Light / Dark System | `src/companion-core/` -> `public/*-companion-ui.html` |
 | **Web Portal & Docs** | Responsive Full Page | Light / Dark System | `src/app/globals.css` + `src/app/docs` |

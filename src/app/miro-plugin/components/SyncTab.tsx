@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { decodeHtmlEntities } from '@/lib/decodeHtmlEntities';
 import { GroupedSyncedImage } from '../types';
 
@@ -40,6 +41,7 @@ export function SyncTab({
   availableScales,
   mirrorMode = false,
 }: SyncTabProps) {
+  const [copiedNodeId, setCopiedNodeId] = useState<string | null>(null);
   return (
     <div className="flex-grow flex flex-col justify-between">
       <div className="space-y-3">
@@ -92,21 +94,44 @@ export function SyncTab({
                         </button>
                       )}
                     </div>
-                    {group.url ? (
-                      <a
-                        href={group.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-[9px] font-mono text-text-muted hover:text-accent truncate cursor-pointer"
-                        title={`Open in source app — ${group.url}`}
+                    <div className="flex items-center gap-1.5 min-w-0 mt-0.5">
+                      {group.url ? (
+                        <a
+                          href={group.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[9px] font-mono text-text-muted hover:text-accent truncate cursor-pointer"
+                          title={`Open in source app — ${group.url}`}
+                        >
+                          ID: {group.nodeId} ↗
+                        </a>
+                      ) : (
+                        <span className="text-[9px] font-mono text-text-muted truncate">
+                          ID: {group.nodeId}
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (navigator.clipboard) {
+                            navigator.clipboard.writeText(group.nodeId);
+                            setCopiedNodeId(group.nodeId);
+                            setTimeout(() => setCopiedNodeId(null), 1500);
+                          }
+                        }}
+                        className="p-0.5 text-text-muted hover:text-accent transition cursor-pointer shrink-0"
+                        title={copiedNodeId === group.nodeId ? 'Copied!' : 'Copy Node ID'}
                       >
-                        ID: {group.nodeId} ↗
-                      </a>
-                    ) : (
-                      <span className="text-[9px] font-mono text-text-muted truncate">
-                        ID: {group.nodeId}
-                      </span>
-                    )}
+                        {copiedNodeId === group.nodeId ? (
+                          <span className="text-[8px] font-mono text-accent">✓</span>
+                        ) : (
+                          <svg className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <rect width="14" height="14" x="8" y="8" rx="2" ry="2"/>
+                            <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>
+                          </svg>
+                        )}
+                      </button>
+                    </div>
                   </div>
 
                   <div className="flex gap-2 mt-1 pt-2 border-t border-border-card/30">

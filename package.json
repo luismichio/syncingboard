@@ -1,6 +1,6 @@
 {
   "name": "syncingboard",
-  "version": "0.16.1",
+  "version": "0.17.0",
   "plan": "community",
   "private": true,
   "packageManager": "yarn@4.13.0",
@@ -16,9 +16,10 @@
     "js-yaml": "4.3.1"
   },
   "scripts": {
-    "dev": "node scripts/inject-version.mjs && next dev",
+    "dev": "node scripts/build-companion.mjs && node scripts/inject-version.mjs && next dev",
     "local": "node scripts/start-local-tunnel.mjs",
-    "build": "node scripts/inject-version.mjs && next build",
+    "build": "node scripts/build-companion.mjs && node scripts/inject-version.mjs && next build",
+    "build:companion": "node scripts/build-companion.mjs",
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
@@ -47,6 +48,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "esbuild": "^0.28.2",
     "eslint": "^9",
     "eslint-config-next": "16.2.11",
     "husky": "^9.1.7",

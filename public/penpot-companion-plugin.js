@@ -1,7 +1,7 @@
 // SyncingBoard Companion Plugin - Penpot background runner
 penpot.ui.open('SyncingBoard Companion', './penpot-companion-ui.html', {
   width: 320,
-  height: 600,
+  height: 650,
 });
 
 function normalizeTheme(theme) {
@@ -22,12 +22,74 @@ function sendTheme() {
 // Fallback push in case UI is already mounted.
 setTimeout(() => {
   sendTheme();
+  broadcastSelection();
 }, 300);
+
+setTimeout(() => {
+  broadcastSelection();
+}, 800);
 
 // Keep UI in sync with runtime theme changes.
 penpot.on('themechange', (theme) => {
   currentTheme = normalizeTheme(theme);
   sendTheme();
+});
+
+function broadcastSelection() {
+  try {
+    const list = penpot.selection;
+    const item = Array.isArray(list) && list.length > 0 ? list[0] : null;
+    const fileId = penpot.currentFile ? penpot.currentFile.id : (penpot.currentFileId || penpot.fileId || 'penpot-doc');
+
+    let selId = null;
+    let selName = null;
+    let selWidth = 0;
+    let selHeight = 0;
+
+    if (item && typeof item === 'object') {
+      selId = item.id;
+      selName = item.name || 'Untitled Shape';
+      if (item.selrect) {
+        selWidth = Math.round(item.selrect.width || 0);
+        selHeight = Math.round(item.selrect.height || 0);
+      } else if (typeof item.width === 'number') {
+        selWidth = Math.round(item.width);
+        selHeight = Math.round(item.height || 0);
+      }
+    } else if (typeof item === 'string') {
+      selId = item;
+      if (penpot.currentPage && typeof penpot.currentPage.getShapeById === 'function') {
+        const shape = penpot.currentPage.getShapeById(item);
+        if (shape) {
+          selName = shape.name || 'Untitled Shape';
+          if (shape.selrect) {
+            selWidth = Math.round(shape.selrect.width || 0);
+            selHeight = Math.round(shape.selrect.height || 0);
+          }
+        }
+      }
+    }
+
+    penpot.ui.sendMessage({
+      action: 'selection-changed-locally',
+      data: selId
+        ? {
+            id: selId,
+            name: selName || 'Untitled Shape',
+            fileId: fileId,
+            width: selWidth,
+            height: selHeight,
+          }
+        : null,
+    });
+  } catch (err) {
+    // Fallback silent
+  }
+}
+
+// Keep UI in sync with live canvas selection changes.
+penpot.on('selectionchange', () => {
+  broadcastSelection();
 });
 
 async function findShapeById(shapeId) {
@@ -141,6 +203,7 @@ penpot.ui.onMessage(async (message) => {
 
   if (message.action === 'ui-ready') {
     sendTheme();
+    broadcastSelection();
     return;
   }
 
@@ -170,25 +233,25 @@ penpot.ui.onMessage(async (message) => {
     });
   }
 
-  if (message.action === 'export-shape') {
+  if (message.action === 'export-shape' || message.action === 'export-frame') {
     try {
       const format = message.format === 'png' ? 'png' : 'svg';
       const scale = typeof message.scale === 'number' && Number.isFinite(message.scale) ? message.scale : 2;
-      const buffer = await exportShapeBuffer(message.shapeId, format, scale);
+      const targetId = message.shapeId || message.nodeId || (penpot.selection && penpot.selection[0] ? penpot.selection[0].id : null);
+      if (!targetId) {
+        throw new Error('No Penpot shape selected or specified for export.');
+      }
+      const buffer = await exportShapeBuffer(targetId, format, scale);
 
-      // Get the shape name and natural dimensions so the Miro plugin can
+      // Get the shape name and natural dimensions so the Miro / FigJam plugin can
       // create the widget at the correct display size regardless of scale.
-      // When the shape is not found on the current page, omit the name (null)
-      // so the Miro plugin preserves the existing widget name rather than
-      // overwriting it with a placeholder.
       let shapeName = null;
       let shapeWidth = 0;
       let shapeHeight = 0;
       try {
-        const shapeFromPage = await findShapeById(message.shapeId);
+        const shapeFromPage = await findShapeById(targetId);
         if (shapeFromPage) {
           if (shapeFromPage.name) shapeName = shapeFromPage.name;
-          // selrect gives the shape's natural dimensions (before scale multiplication)
           if (shapeFromPage.selrect && typeof shapeFromPage.selrect.width === 'number') {
             shapeWidth = Math.round(shapeFromPage.selrect.width);
             shapeHeight = Math.round(shapeFromPage.selrect.height);

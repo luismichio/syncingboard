@@ -9,7 +9,26 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.17.0] - 2026-08-14
+
+### Added
+- **Pure TypeScript Companion Core Architecture (`src/companion-core/`)** — extracted all companion runtime logic into modular, testable pure TypeScript modules (`types.ts`, `validation.ts`, `protocol.ts`, `token.ts`, `session.ts`, `relay.ts`, `theme.ts`, `runtime.ts`).
+- **Automated Companion Bundler Pipeline (`scripts/build-companion.mjs`)** — introduced standalone `esbuild` compilation pipeline compiling TypeScript entrypoints into zero-dependency, single-file HTML distributions (`public/figma-companion-ui.html` and `public/penpot-companion-ui.html`), wired into `yarn build` and `yarn dev`.
+- **Comprehensive Companion Unit Test Suite (`src/companion-core/__tests__/`)** — created 6 new unit test suites with 100% test coverage across validation, protocol parsing, token exchange, session lifecycle, and state machine transitions (170/170 passing tests).
+- **Target Design Parity for Companions** — aligned Figma and Penpot companion interfaces with the Miro/FigJam design system:
+  - **2-Tab Layout** (`SYNC` and `SETTINGS`) matching `TabNav.tsx` with uppercase monospace tracking and cyan bottom indicator (no icons).
+  - **ThemeToggle Cycle Button** matching `ThemeToggle.tsx` (`System` → `Light` → `Dark` → `System` with Monitor, Sun, and Moon vector icons).
+  - **Button Token Harmonization** (`CONNECT` / `COPY ID` matching `text-[9px] font-mono font-bold tracking-wider text-accent border border-accent/40 rounded px-1.5 py-0.5`; `DISCONNECT` as borderless underline link).
+  - **Clean Status Indicators** without box/pill badge outlines (`text-[9px] font-mono uppercase font-medium tracking-wider` with `#22C55E` / `#EAB308 pulse` / `#EF4444` 8px dots).
+  - **Bottom VersionStamp Footer** matching `VersionStamp.tsx` with embedded documentation link.
+- **1-Click Copy Node ID** — added clipboard copy icon button with stateful `✓` / `COPIED!` feedback next to Node IDs on both Target Sync Cards (`SyncTab.tsx`) and Companion Active Selection Cards, preserving clickable source hyperlinks (`ID: {nodeId} ↗`).
+- **Penpot Live Canvas Selection** — added `penpot.on('selectionchange')` listener and 1s heartbeat polling in `runtime.ts` for real-time canvas frame tracking.
+
+### Fixed
+- **FigJam → Penpot Export Relay Timeout** — resolved command action name mismatch (`export-shape` vs `export-frame`) and forwarded `shapeId` in companion relay dispatch, fixing 15s placement timeout during FigJam canvas imports.
+- **Companion Log Clarity** — updated Ably command logs to dynamically identify request origin (`FigJam` vs `Board` / `Miro`) and generalized expiration warnings.
+- **Plugin Window Dimensions** — increased companion window height in `figma-plugin/code.js` and `public/penpot-companion-plugin.js` to `650px` (`320px × 650px`) to prevent vertical scrollbars on Settings and Sync tabs.
+- **Typography Consistency** — frame names now use system UI sans-serif `text-xs font-semibold text-text-page` (12px), restricting monospace strictly to IDs, scale multipliers, and dimensions.
 
 ### Added
 - **Design System Architecture Specifications** — created `doc/design-system.md` comprehensively covering core tokens, syntax highlighting palettes, typography rules, component standards (Buttons, Status Badges, Selectors, Headers, Footers), and Web Documentation portal patterns (`/docs` code blocks, GitHub callouts, tables, Mermaid diagrams).
