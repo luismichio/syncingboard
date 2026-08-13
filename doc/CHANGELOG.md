@@ -13,7 +13,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 - **Design System Architecture Specifications** — created `doc/design-system.md` comprehensively covering core tokens, syntax highlighting palettes, typography rules, component standards (Buttons, Status Badges, Selectors, Headers, Footers), and Web Documentation portal patterns (`/docs` code blocks, GitHub callouts, tables, Mermaid diagrams).
-- **Guest Editor Access Setup Guide** — updated `doc/setup.md` with step-by-step instructions for deploying an internal Miro App wrapper to unblock Guest Editors on team boards without waiting for Miro Marketplace approval.
 - **Stateless MCP (SEP 2575) Architecture Roadmap** — updated `doc/architecture/mcp-roadmap.md` with specifications for serverless MCP server endpoints (`/api/mcp`), multi-MCP chaining architecture with Figma Desktop / Penpot MCPs, and Streamable HTTP transport patterns.
 - **Canvas Metadata & Cross-Board Security Documentation** — updated `SECURITY.md` with explicit details on canvas widget metadata minimization (`fileKey`, `nodeId`), server-side OAuth ACL enforcement for copied elements, and data flow properties for compliance reviews.
 

@@ -88,7 +88,7 @@ SyncingBoard enforces a clean, modern dark-mode-first aesthetic with system-matc
 ## 🌐 Web Documentation & Portal Components (`/docs`)
 
 ### 1. Code Blocks & Inline Snippets
-* **Fenced Code Block (<pre>)**: Background `var(--bg-code-block)`, border `1px solid var(--border-code)`, radius `12px`, padding `1.25rem 1.5rem`.
+* **Fenced Code Block (`<pre>`)**: Background `var(--bg-code-block)`, border `1px solid var(--border-code)`, radius `12px`, padding `1.25rem 1.5rem`.
 * **Inline Code (`code`)**: Background `var(--bg-code-inline)`, border `1px solid var(--border-code)`, radius `6px`, font `13px var(--font-mono)`.
 
 ### 2. Callout & Alert Banners

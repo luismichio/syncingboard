@@ -38,26 +38,6 @@ Miro is the whiteboard target. Both Figma and Penpot sync go through Miro.
    - `boards:read`
    - `boards:write`
 5. Click **Create App** and copy your **Client ID** and **Client Secret**.
-
-### Guest Editor Access (Internal Team Setup)
-
-By default, Miro restricts unpublished custom apps from loading for Guest Editors (external users invited to a specific board). If your organization relies on Guest Editors accessing SyncingBoard, a Team Admin can deploy a lightweight **Internal Miro App Wrapper** for your team:
-
-1. Navigate to your [Miro Profile Settings](https://miro.com/app/settings/dev-access-tokens/) -> **Developer Team** -> **Create new app**.
-2. Name your internal app (e.g., `SyncingBoard (Internal)`).
-3. Set the **App URL / Web-plugin URL** to:
-   ```
-   https://www.syncingboard.com/miro-plugin
-   ```
-   *(or `https://YOUR_DOMAIN.com/miro-plugin` if self-hosting)*.
-4. Under **Permissions / Scopes**, enable:
-   * `boards:read`
-   * `boards:write`
-5. Click **Create App**, then click **Install app and get OAuth token** to authorize it for your target Miro Team workspace.
-
-> [!NOTE]
-> **Security & Compatibility:** This internal wrapper uses Miro's native client-side Web SDK sandbox under strict browser Same-Origin Policy protection. It requires zero Vercel configuration changes, exposes no secret keys, and unblocks Guest Editors on all boards created inside your Miro Team workspace.
-
 ---
 
 ## Source Adapter: Figma (Skip if using Penpot only)
