@@ -193,6 +193,7 @@ function trackedToSynced(items: FigjamTracked[]): SyncedImage[] {
 
 export function useFigJamPlugin() {
   const { figmaToken, tokensLoading, connectFigma, disconnectFigma } = useAuthTokens(false);
+  const [rawSelectedItems, setRawSelectedItems] = useState<SyncedImage[]>([]);
   const selectionKey = useMemo(
     () => rawSelectedItems.map((i) => i.id).sort().join(','),
     [rawSelectedItems]

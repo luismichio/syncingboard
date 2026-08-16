@@ -86,9 +86,10 @@ export function useMiroPlugin(propagate: boolean = false, preserveSize: boolean 
 
   const handleDeselectGroup = (_groupKey: string, itemIds: string[]) => {
     setDeselectedIds((prev) => Array.from(new Set([...prev, ...itemIds])));
-    if (typeof window !== 'undefined' && window.miro?.board?.deselect && itemIds.length > 0) {
+    const board = typeof window !== 'undefined' ? window.miro?.board : undefined;
+    if (board && typeof board.deselect === 'function' && itemIds.length > 0) {
       try {
-        Promise.all(itemIds.map((id) => window.miro.board.deselect({ id }))).catch((e) => {
+        Promise.all(itemIds.map((id) => board.deselect({ id }))).catch((e) => {
           console.warn('[MiroSelection] Failed to deselect widgets from canvas:', e);
         });
       } catch (e) {
