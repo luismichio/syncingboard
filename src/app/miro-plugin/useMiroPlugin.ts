@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useAuthTokens } from './useAuthTokens';
 import { useMiroSelection } from './useMiroSelection';
 import { useFigmaImporter } from './useFigmaImporter';
@@ -62,10 +62,43 @@ export function useMiroPlugin(propagate: boolean = false, preserveSize: boolean 
 
   // 2. Selection Hook
   const {
-    selectedItems,
-    setSelectedItems,
+    selectedItems: rawSelectedItems,
+    setSelectedItems: setRawSelectedItems,
     isAnyImageSelected,
   } = useMiroSelection(isInitMode);
+
+  const [deselectedIds, setDeselectedIds] = useState<string[]>([]);
+
+  // Automatically reset deselected items whenever the board selection identity changes
+  const selectionKey = useMemo(
+    () => rawSelectedItems.map((i) => i.id).sort().join(','),
+    [rawSelectedItems]
+  );
+  useEffect(() => {
+    setDeselectedIds([]);
+  }, [selectionKey]);
+
+  const selectedItems = useMemo(
+    () => rawSelectedItems.filter((item) => !deselectedIds.includes(item.id)),
+    [rawSelectedItems, deselectedIds]
+  );
+
+  const handleDeselectGroup = (_groupKey: string, itemIds: string[]) => {
+    setDeselectedIds((prev) => Array.from(new Set([...prev, ...itemIds])));
+    if (typeof window !== 'undefined' && window.miro?.board?.deselect && itemIds.length > 0) {
+      try {
+        Promise.all(itemIds.map((id) => window.miro.board.deselect({ id }))).catch((e) => {
+          console.warn('[MiroSelection] Failed to deselect widgets from canvas:', e);
+        });
+      } catch (e) {
+        console.warn('[MiroSelection] Failed to deselect widgets from canvas:', e);
+      }
+    }
+  };
+
+  const handleClearDeselected = () => {
+    setDeselectedIds([]);
+  };
 
   // 3. Figma Importer Hook
   const {
@@ -275,7 +308,11 @@ export function useMiroPlugin(propagate: boolean = false, preserveSize: boolean 
     miroToken,
     tokensLoading,
     selectedItems,
-    setSelectedItems,
+    rawSelectedItems,
+    deselectedIds,
+    handleDeselectGroup,
+    handleClearDeselected,
+    setSelectedItems: setRawSelectedItems,
     isSyncing,
     syncStatus,
     figmaInput,

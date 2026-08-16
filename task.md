@@ -1,3 +1,59 @@
+# Task: Deselect Items from Sync List (Local Selection Exclusion)
+
+## Phase 1: Hook State & Filtering
+- [x] Add `deselectedIds: string[]` state in `src/app/miro-plugin/useMiroPlugin.ts`.
+- [x] Auto-reset `deselectedIds` when selection identity changes.
+- [x] Filter `selectedItems` into `activeSelectedItems` and pass to `useMiroSync`.
+- [x] Expose `handleDeselectGroup` and `deselectedIds`.
+
+## Phase 2: Component UI in SyncTab
+- [x] Add `onRemoveGroup` callback to `SyncTabProps` in `src/app/miro-plugin/components/SyncTab.tsx`.
+- [x] Render Lucide-style "✕" button in group card header before platform badge.
+- [x] Connect `onRemoveGroup` in `src/app/miro-plugin/page.tsx`.
+
+## Phase 3: FigJam Mirror Parity
+- [x] Add `deselectedIds` and `handleDeselectGroup` to `src/app/figjam-mirror/useFigJamPlugin.ts`.
+- [x] Connect `onRemoveGroup` in `src/app/figjam-mirror/page.tsx`.
+
+## Phase 4: Unit Testing & Build Verification
+- [x] Create `src/app/miro-plugin/__tests__/deselectSync.test.ts` (5/5 unit tests passing).
+- [x] Verify full test suite (26/26 test files, 182/182 unit tests passing).
+- [x] Verify Next.js production build (`yarn build` succeeds with 0 errors).
+
+---
+
+# Task: Companion HTML Refactor — Shared Tested Core + Single Bundle
+
+## Phase 1: Shared Core Extraction (`src/companion-core/`)
+- [x] Create `src/companion-core/types.ts` with strict TypeScript types (No `any`).
+- [x] Create `src/companion-core/validation.ts` for pairingId, tabId, and platform validation.
+- [x] Create `src/companion-core/protocol.ts` for host-companion postMessage & Ably message codecs.
+- [x] Create `src/companion-core/token.ts` for `/api/relay/companion/session` token fetch & error handling.
+- [x] Create `src/companion-core/session.ts` for session state machine & release beacon.
+- [x] Create `src/companion-core/relay.ts` for Ably lifecycle, subscriptions, and event handlers.
+- [x] Create `src/companion-core/theme.ts` for host theme synchronization.
+
+## Phase 2: Unit Test Suite (`src/companion-core/__tests__/`)
+- [x] Create `validation.test.ts` for pairingId and protocol validation.
+- [x] Create `protocol.test.ts` for message shapes and serialization.
+- [x] Create `session.test.ts` for state machine transitions (409, 429, Standby, Transfer).
+- [x] Create `token.test.ts` for token cache and authUrl payload generation.
+- [x] Run `yarn test` and ensure all unit tests pass (170/170 passing across 24 suites).
+
+## Phase 3: Bundler & Build Pipeline (`scripts/build-companion.mjs`)
+- [x] Add `esbuild` to `devDependencies` in `package.json`.
+- [x] Create `src/companion-core/figma-entry.ts` and `src/companion-core/penpot-entry.ts`.
+- [x] Create `src/companion-core/companion-template.html` with `doc/design-system.md` tokens.
+- [x] Create `scripts/build-companion.mjs` to bundle TS and inject into `public/*-companion-ui.html`.
+- [x] Update `package.json` build scripts to include companion bundle generation.
+
+## Phase 4: Generation, Verification & Design System Parity
+- [x] Generate `public/figma-companion-ui.html` and `public/penpot-companion-ui.html`.
+- [x] Verify design system tokens (`--bg-page`, `--bg-card`, `--border-card`, `--accent`, `8px` radius).
+- [x] Run `yarn build` and full test suite.
+
+---
+
 # Task: Create Design System Architecture & UI Inconsistency Audit (`doc/design-system.md`)
 
 ## Phase 1: Audit & Token Mapping

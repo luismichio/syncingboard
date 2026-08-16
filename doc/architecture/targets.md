@@ -56,7 +56,8 @@ SyncingBoard stores all design connection metadata directly in the Miro widget. 
   "format": "png" | "svg",
   "scale": 1 | 2 | 3 | 4,   // Community plan: 1x/2x (MAX_SCALE=2). Self-host: 1x–4x (MAX_SCALE=4).
   "platform": "figma" | "penpot",
-  "width": 1200             // Stored natural width for Penpot vector scaling
+  "width": 1200,            // Stored natural width for Penpot vector scaling
+  "lastSyncedAt": 1723826700000 // Millisecond timestamp for freshness auditing & AI agent get_status tool
 }
 ```
 

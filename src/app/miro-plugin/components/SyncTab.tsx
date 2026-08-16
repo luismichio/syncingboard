@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { decodeHtmlEntities } from '@/lib/decodeHtmlEntities';
+import { formatDuration } from '@/lib/formatDuration';
 import { GroupedSyncedImage } from '../types';
 
 interface SyncTabProps {
@@ -17,6 +18,7 @@ interface SyncTabProps {
   onSync: () => void;
   onGroupSettingChange: (itemIds: string[], key: 'format' | 'scale', value: unknown) => void;
   onRefreshNodeName?: (fileKey: string, nodeId: string, platform: 'figma' | 'penpot') => void;
+  onRemoveGroup?: (groupKey: string, itemIds: string[]) => void;
   availableScales: number[];
   /** FigJam mirror mode: the list is a registry of placed mirrors, not a
    * Miro canvas selection — different wording and no 3-item cap. */
@@ -38,6 +40,7 @@ export function SyncTab({
   onSync,
   onGroupSettingChange,
   onRefreshNodeName,
+  onRemoveGroup,
   availableScales,
   mirrorMode = false,
 }: SyncTabProps) {
@@ -74,9 +77,25 @@ export function SyncTab({
                         x{group.widgets.length}
                       </span>
                     )}
+
+                    {onRemoveGroup && (
+                      <button
+                        type="button"
+                        onClick={() => onRemoveGroup(group.key, group.widgets.map((w) => w.id))}
+                        disabled={isSyncing}
+                        className="p-0.5 text-text-muted hover:text-text-page hover:bg-bg-page/40 rounded transition-colors disabled:opacity-40 cursor-pointer ml-0.5"
+                        title="Deselect from sync list"
+                        aria-label={`Deselect ${decodeHtmlEntities(group.nodeName)}`}
+                      >
+                        <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <line x1="18" y1="6" x2="6" y2="18" />
+                          <line x1="6" y1="6" x2="18" y2="18" />
+                        </svg>
+                      </button>
+                    )}
                   </div>
 
-                  <div className="flex flex-col pr-16">
+                  <div className="flex flex-col pr-24">
                     <div className="flex items-center gap-1.5 min-w-0">
                       <span className="text-xs font-semibold text-text-page truncate">
                         {decodeHtmlEntities(group.nodeName)}
@@ -233,10 +252,10 @@ export function SyncTab({
               className="w-full mt-2 font-mono font-bold text-xs py-2.5 rounded bg-accent text-bg-page hover:opacity-90 transition disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
             >
               {cooldownSeconds > 0
-          ? `COMMUNITY COOLDOWN · ${cooldownSeconds}s`
-          : mirrorMode
-            ? (syncAllCopies ? 'SYNC + UPDATE ALL COPIES' : 'SYNC SELECTED')
-            : (syncAllCopies ? 'SYNC + UPDATE ALL COPIES' : 'SYNC SELECTED')}
+                ? `COMMUNITY COOLDOWN · ${formatDuration(cooldownSeconds)}`
+                : mirrorMode
+                ? (syncAllCopies ? 'SYNC + UPDATE ALL COPIES' : 'SYNC SELECTED')
+                : (syncAllCopies ? 'SYNC + UPDATE ALL COPIES' : 'SYNC SELECTED')}
             </button>
           </div>
         ) : (

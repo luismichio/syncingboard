@@ -215,7 +215,10 @@ async function figjamPlace(payload) {
     if (!fileKey || !nodeId) {
       return { ok: false, error: 'missing fileKey/nodeId' };
     }
-    const title = `${payload.name || nodeId} [FigmaSync|${fileKey}|${nodeId}]`;
+    const cleanName = (payload.name && payload.name !== 'Loading...' && payload.name !== 'Pasted Screen')
+      ? String(payload.name).trim()
+      : '';
+    const layerName = cleanName || (nodeId ? `Frame ${nodeId}` : 'Frame');
 
     // IMPORT NEW: Import's "Place on Canvas" must ALWAYS create a fresh
     // rect — it must never rewrite an existing copy of the same frame key
@@ -306,10 +309,15 @@ async function figjamPlace(payload) {
       // place — their internals remain visible (the reported overlap).
       const artSwap = nodeLooksLikeArtwork(existing);
       if (!artSwap && fillImageMatches(existing, newFill)) {
+        if (cleanName) {
+          try {
+            existing.name = cleanName;
+          } catch (e) {}
+        }
         try {
           existing.setPluginData(SB_META_KEY, JSON.stringify({
             fileKey: fileKey, nodeId: nodeId, key: figjamKey(fileKey, nodeId),
-            imageHash: image.hash, name: payload.name || figjamMeta(existing).name || '',
+            imageHash: image.hash, name: cleanName || figjamMeta(existing).name || '',
             format: payload.format || 'png',
             scale: payload.scale || 1,
             platform: payload.platform || 'figma',
@@ -323,7 +331,7 @@ async function figjamPlace(payload) {
       const swapParent = swapTargetParent(existing);
       removeNodeAndChildren(existing);
       const body = figma.createRectangle();
-      body.name = title || prevName;
+      body.name = cleanName || prevName || layerName;
       const swapW = keepSize ? gw0 : (targetW || gw0);
       const swapH = keepSize ? gh0 : (targetH || gh0);
       body.resize(Math.max(1, swapW), Math.max(1, swapH));
@@ -333,7 +341,7 @@ async function figjamPlace(payload) {
       try {
         body.setPluginData(SB_META_KEY, JSON.stringify({
           fileKey: fileKey, nodeId: nodeId, key: figjamKey(fileKey, nodeId),
-          imageHash: image.hash, name: payload.name || prevName,
+          imageHash: image.hash, name: cleanName || prevName || '',
           format: payload.format || 'png',
           scale: payload.scale || 1,
           platform: payload.platform || 'figma',
@@ -347,7 +355,7 @@ async function figjamPlace(payload) {
   }
 
   const rect = figma.createRectangle();
-  rect.name = title;
+  rect.name = layerName;
   const W = targetW || (Number.isFinite(payload.width) ? payload.width : 240);
   const H = targetH || (Number.isFinite(payload.height) ? payload.height : 160);
   if (!keepSize) rect.resize(W, H);
@@ -504,6 +512,11 @@ async function figjamReplace(payload) {
         targetH = Math.max(1, Math.round(png.height));
       }
     }
+    const cleanName = (payload.name && payload.name !== 'Loading...' && payload.name !== 'Pasted Screen')
+      ? String(payload.name).trim()
+      : '';
+    const layerName = cleanName || (nodeId ? `Frame ${nodeId}` : 'Frame');
+
     const resultNodes = [];
     for (const existing of allTargets) {
       // Keep the user's crop position: carry the previous FILL transform
@@ -526,6 +539,11 @@ async function figjamReplace(payload) {
       // place — their inner artwork stays visible (the reported overlap).
       const artSwap = nodeLooksLikeArtwork(existing);
       if (!artSwap && fillImageMatches(existing, newFill)) {
+        if (cleanName) {
+          try {
+            existing.name = cleanName;
+          } catch (e) {}
+        }
         try {
           existing.setPluginData(
             SB_META_KEY,
@@ -534,7 +552,7 @@ async function figjamReplace(payload) {
               nodeId: nodeId,
               key: figjamKey(fileKey, nodeId),
               imageHash: image.hash,
-              name: payload.name || figjamMeta(existing).name || '',
+              name: cleanName || figjamMeta(existing).name || '',
               format: payload.format || 'png',
               scale: payload.scale || 1,
               platform: payload.platform || 'figma',
@@ -548,7 +566,7 @@ async function figjamReplace(payload) {
       const swapParent = swapTargetParent(existing);
       removeNodeAndChildren(existing);
       const body = figma.createRectangle();
-      body.name = payload.name || prevName;
+      body.name = cleanName || prevName || layerName;
       const swapW = keepSize ? gw0 : (targetW || gw0);
       const swapH = keepSize ? gh0 : (targetH || gh0);
       body.resize(Math.max(1, swapW), Math.max(1, swapH));
@@ -563,7 +581,7 @@ async function figjamReplace(payload) {
             nodeId: nodeId,
             key: figjamKey(fileKey, nodeId),
             imageHash: image.hash,
-            name: payload.name || prevName,
+            name: cleanName || prevName || '',
             format: payload.format || 'png',
             scale: payload.scale || 1,
             platform: payload.platform || 'figma',
@@ -695,6 +713,15 @@ figma.ui.onmessage = async (msg) => {
       action: 'figjam-place-result',
       requestId: msg.requestId,
       ...result,
+    });
+    return;
+  }
+
+  if (msg.action === 'figjam-deselect') {
+    const idsToDeselect = Array.isArray(msg.nodeIds) ? msg.nodeIds : [];
+    const current = figma.currentPage.selection || [];
+    figma.currentPage.selection = current.filter(function (n) {
+      return idsToDeselect.indexOf(n.id) === -1;
     });
     return;
   }

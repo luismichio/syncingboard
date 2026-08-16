@@ -9,6 +9,29 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.17.2] - 2026-08-16
+
+### Added
+- **Board-Synchronized Selection Deselection ("✕" Group Card Dismissal)** — added interactive group card dismissal in `SyncTab.tsx`, allowing designers to dismiss individual frame groups directly inside the Miro sidebar or FigJam mirror. Dismissing automatically deselects the corresponding widgets on the Miro board canvas via `miro.board.deselect` and on the FigJam canvas via `figjam-deselect`.
+- **Dynamic Batch Limit Re-Evaluation** — dismissing groups instantly recalculates the active batch count: if an initial board selection exceeds the 3-item limit, dismissing groups until the count is 3 or less immediately clears the warning banner and activates the Sync button.
+- **Unit Test Suite for Deselection (`src/app/miro-plugin/__tests__/deselectSync.test.ts`)** — verified multi-copy group removal, ID filtering, and batch boundary thresholds (5/5 passing tests).
+
+### Fixed
+- **React Hydration Mismatch on `/miro-plugin`** — added a `mounted` lifecycle guard to `src/app/miro-plugin/page.tsx` ensuring SSR and initial client hydration payloads match identically before reading URL search parameters.
+- **Next.js 16 `<Script>` Tag Migration** — converted raw HTML `<script>` tags in `src/app/layout.tsx` to Next.js `<Script>` components with `beforeInteractive` and `afterInteractive` strategies, eliminating Turbopack component script warnings.
+- **Miro SDK Deselect Validation** — updated `useMiroPlugin.ts` to call `miro.board.deselect({ id })` per item, satisfying Miro Web SDK v2 schema validation.
+
+## [0.17.1] - 2026-08-15
+
+### Added
+- **Human-Readable Cooldown & Rate Limit Formatting (`src/lib/formatDuration.ts`)** — introduced smart duration and reset-time formatting (`formatDuration`, `formatCooldownTime`). Replaced raw second outputs (e.g. `43200s`) with scaled units (`45s`, `1m 30s`, `12h`) and local clock times for long cooldowns (e.g. `12h (at 10:18 AM)`), integrated across Miro sync, FigJam plugin, and the Sync button.
+- **Unit Test Suite for Duration Formatter (`src/lib/formatDuration.test.ts`)** — comprehensive test coverage for short bursts, minute/second boundaries, hour/minute spans, day calculations, and clock time formatting.
+
+### Fixed
+- **Miro Sync Missing Node State Feedback** — resolved false success reporting in `useMiroSync.ts` when a frame's Node ID changed or was deleted in Figma. Sync now tracks actual updated counts vs missing nodes and surfaces an explicit error (`Frame "Name" (ID: 01:01) was not found in the Figma file`).
+- **FigJam Missing Node Feedback** — updated `useFigJamPlugin.ts` to output descriptive missing frame error messages matching Miro's error clarity.
+- **Native FigJam Export Filename** — updated `figma-plugin/code.js` (`figjamPlace` and `figjamReplace`) to synchronize the canvas layer's `node.name` property with the clean frame name during placement, in-place syncs, and node swaps, ensuring FigJam's native right-click export produces `{FrameName}.png` rather than `Untitled.png`.
+
 ## [0.17.0] - 2026-08-14
 
 ### Added

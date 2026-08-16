@@ -4,6 +4,7 @@ import { callPenpotMcpTool } from '@/lib/sync/companionRelayClient';
 import { getValidToken } from '@/lib/tokens';
 import { trackEvent } from '@/lib/analytics';
 import { decodeHtmlEntities } from '@/lib/decodeHtmlEntities';
+import { formatDuration, formatCooldownTime } from '@/lib/formatDuration';
 import { MiroAdapter } from './MiroAdapter';
 
 /**
@@ -63,12 +64,14 @@ const resetAt = typeof data.reset === 'number' && Number.isFinite(data.reset)
 setCurrentTime(Date.now());
 setCooldownUntil(resetAt);
 const seconds = Math.max(1, Math.ceil((resetAt - Date.now()) / 1000));
-return `SyncingBoard Community limit reached. Retry in ${seconds}s.`;
+const timeFormatted = formatCooldownTime(seconds, resetAt);
+return `SyncingBoard Community limit reached. Retry in ${timeFormatted}.`;
 };
 
 const syncSelectedScreens = async () => {
 if (cooldownSeconds > 0) {
-setSyncStatus(`Community cooldown active. Retry in ${cooldownSeconds}s.`, 'info');
+const timeFormatted = formatDuration(cooldownSeconds);
+setSyncStatus(`Community cooldown active. Retry in ${timeFormatted}.`, 'info');
 return;
 }
     if (isSyncing) return;
@@ -290,11 +293,11 @@ const communityMessage = applyCommunityRateLimit(batchRes, errData);
 if (communityMessage) {
 throw new Error(communityMessage);
 }
-if (batchRes.status === 429) {
-const parts: string[] = ['Rate limited by Figma.'];
+            if (batchRes.status === 429) {
+              const parts: string[] = ['Rate limited by Figma.'];
               if (errData.planTier) parts.push(`Plan: ${errData.planTier}.`);
               if (errData.limitType) parts.push(`Seat tier: ${errData.limitType}.`);
-              if (errData.retryAfter) parts.push(`Retry in ${errData.retryAfter}s.`);
+              if (errData.retryAfter) parts.push(`Retry in ${formatDuration(errData.retryAfter)}.`);
               throw new Error(parts.join(' '));
             }
             throw new Error(errData.error || 'Figma batch render failed');
@@ -359,6 +362,9 @@ const parts: string[] = ['Rate limited by Figma.'];
       }
 
       // --- STEP 2: Update each board widget using the cached data URLs ---
+      let updatedCount = 0;
+      const missingNodes: string[] = [];
+
       for (let i = 0; i < itemsToSync.length; i++) {
         const item = itemsToSync[i];
         // Look up by format-aware cache key (Penpot uses format in key, Figma doesn't)
@@ -370,11 +376,15 @@ const parts: string[] = ['Rate limited by Figma.'];
         if (!dataUrl) dataUrl = renderCache.get(`${cacheKey}|${cacheFormat}`);
         if (!dataUrl) dataUrl = renderCache.get(cacheKey); // fallback to legacy key
         if (!dataUrl) {
-          console.warn(`No render cached for ${cacheKey}, skipping.`);
+          console.warn(`No render cached for ${cacheKey}, frame may be deleted or moved.`);
+          const label = item.nodeName && item.nodeName !== item.nodeId ? `"${item.nodeName}" (ID: ${item.nodeId})` : `ID: ${item.nodeId}`;
+          if (!missingNodes.includes(label)) {
+            missingNodes.push(label);
+          }
           continue;
         }
 
-        if (i > 0) await new Promise(resolve => setTimeout(resolve, 500));
+        if (updatedCount > 0) await new Promise(resolve => setTimeout(resolve, 500));
         // Use live name from export response if available, fall back to original
         const liveName = nameCache.get(`${item.fileKey}|${item.nodeId}`) || item.nodeName;
         setSyncStatus(`Updating canvas widget ${i + 1}/${itemsToSync.length}: ${liveName}`);
@@ -401,18 +411,18 @@ const parts: string[] = ['Rate limited by Figma.'];
           }),
         });
 
-if (!response.ok) {
-const errData = await response.json().catch(() => ({})) as {
-error?: string;
-reset?: number;
-retryAfter?: number | null;
-};
-const communityMessage = applyCommunityRateLimit(response, errData);
-if (communityMessage) {
-throw new Error(communityMessage);
-}
-throw new Error(errData.error || 'Failed to update image on Miro board');
-}
+        if (!response.ok) {
+          const errData = await response.json().catch(() => ({})) as {
+            error?: string;
+            reset?: number;
+            retryAfter?: number | null;
+          };
+          const communityMessage = applyCommunityRateLimit(response, errData);
+          if (communityMessage) {
+            throw new Error(communityMessage);
+          }
+          throw new Error(errData.error || 'Failed to update image on Miro board');
+        }
 
         // Update widget metadata and title via the Miro SDK.
         // Title is updated via the SDK (not the REST API PATCH) to avoid
@@ -432,10 +442,28 @@ throw new Error(errData.error || 'Failed to update image on Miro board');
         } catch (metaErr) {
           console.warn('Failed to update widget metadata/title:', metaErr);
         }
+        updatedCount++;
+      }
+
+      if (missingNodes.length > 0 && updatedCount === 0) {
+        const noun = itemsToSync[0]?.platform === 'penpot' ? 'Penpot file' : 'Figma file';
+        throw new Error(
+          missingNodes.length === 1
+            ? `Frame ${missingNodes[0]} was not found in the ${noun} (it may have been deleted or moved to a new page with a new ID).`
+            : `${missingNodes.length} frames not found in the ${noun}: ${missingNodes.join(', ')}.`
+        );
       }
 
       const label = syncAllCopies ? 'all copies' : 'selected widget(s)';
-      setSyncStatus(`✓ Updated ${itemsToSync.length} ${label} successfully!`);
+      if (missingNodes.length > 0) {
+        const noun = itemsToSync[0]?.platform === 'penpot' ? 'Penpot' : 'Figma';
+        setSyncStatus(
+          `Updated ${updatedCount} of ${itemsToSync.length} ${label}. Missing in ${noun}: ${missingNodes.join(', ')}.`,
+          'info'
+        );
+      } else {
+        setSyncStatus(`✓ Updated ${updatedCount} ${label} successfully!`);
+      }
 
       try {
         const syncChannel = new BroadcastChannel('figma_miro_sync');

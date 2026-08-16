@@ -136,6 +136,7 @@ export default function FigJamPluginPage() {
             onSync={hook.syncSelectedScreens}
             onGroupSettingChange={onGroupSettingChange}
             onRefreshNodeName={onRefreshNodeName}
+            onRemoveGroup={hook.handleDeselectGroup}
             availableScales={AVAILABLE_SCALES}
             mirrorMode
           />

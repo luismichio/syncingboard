@@ -49,8 +49,13 @@ function buildGroupedItems(selectedItems: SyncedImage[]): GroupedSyncedImage[] {
 }
 
 export default function MiroPluginPage() {
+  const [mounted, setMounted] = useState<boolean>(false);
   const [propagate, setPropagate] = useState<boolean>(false);
   const [preserveSize, setPreserveSize] = useState<boolean>(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const {
     isInitMode,
@@ -59,6 +64,7 @@ export default function MiroPluginPage() {
     tokensLoading,
     selectedItems,
     setSelectedItems,
+    handleDeselectGroup,
     isSyncing,
     syncStatus,
     figmaInput,
@@ -318,8 +324,8 @@ export default function MiroPluginPage() {
     }
   };
 
-  if (isInitMode === null) {
-    return null;
+  if (!mounted || isInitMode === null) {
+    return <div className="bg-bg-page min-h-screen"></div>;
   }
 
   if (isInitMode === true) {
@@ -358,6 +364,7 @@ export default function MiroPluginPage() {
             onSync={syncSelectedScreens}
             onGroupSettingChange={handleGroupSettingChange}
             onRefreshNodeName={handleRefreshNodeName}
+            onRemoveGroup={handleDeselectGroup}
             availableScales={AVAILABLE_SCALES}
           />
         )}

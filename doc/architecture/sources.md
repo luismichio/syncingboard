@@ -122,3 +122,14 @@ Google Stitch community MCP server (`stitch-mcp`):
 Adobe UXP (Unified Extensibility Platform) for Photoshop / Illustrator:
 * **Cloud Storage API Path:** `GET /files/{assetId}/image-rendition` offers cloud-native document rendition retrieval.
 * **UXP Plugin Path (Tauri-dependent):** UXP plugin inside Photoshop/Illustrator reads active selections and exports PNG/SVG files relayed to Tauri local sockets.
+ 
+---
+ 
+## Headless CMS (Research Target)
+ 
+Headless Content Management Systems (Contentful, Sanity, Strapi, Notion):
+* **API Integration:** Direct REST / GraphQL client integration to pull structured content models, rich text fields, and asset media URLs.
+* **Canvas Use Cases:**
+  * **In-Place Copy Hydration:** Replaces placeholder text on Figma/Penpot design components with live production copy.
+  * **Multi-Locale Visual Auditing:** Generates side-by-side translated screens on Miro (e.g., German, Japanese, Spanish) to preview text overflow and layout bounds before engineering implementation.
+  * **Title Signature:** `[CMSSync|provider|spaceId|entryId]` enables stateless tracking directly on the whiteboard canvas.

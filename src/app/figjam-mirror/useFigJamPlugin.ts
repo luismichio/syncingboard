@@ -1,10 +1,11 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuthTokens } from '@/app/miro-plugin/useAuthTokens';
 import { parseFigmaUrl } from '@/lib/sync/figmaUrlParser';
 import { callRelay, getOrCreatePairingId, subscribeRelayLive } from '@/lib/sync/companionRelayClient';
 import { decodeHtmlEntities } from '@/lib/decodeHtmlEntities';
+import { formatDuration } from '@/lib/formatDuration';
 import { SyncedImage } from '@/app/miro-plugin/useMiroSelection';
 import type { SyncStatus, SyncStatusType } from '@/app/miro-plugin/useMiroPlugin';
 
@@ -192,7 +193,32 @@ function trackedToSynced(items: FigjamTracked[]): SyncedImage[] {
 
 export function useFigJamPlugin() {
   const { figmaToken, tokensLoading, connectFigma, disconnectFigma } = useAuthTokens(false);
-  const [selectedItems, setSelectedItems] = useState<SyncedImage[]>([]);
+  const [rawSelectedItems, setRawSelectedItems] = useState<SyncedImage[]>([]);
+  const [deselectedIds, setDeselectedIds] = useState<string[]>([]);
+
+  // Automatically reset deselected items whenever the canvas selection identity changes
+  const selectionKey = useMemo(
+    () => rawSelectedItems.map((i) => i.id).sort().join(','),
+    [rawSelectedItems]
+  );
+  useEffect(() => {
+    setDeselectedIds([]);
+  }, [selectionKey]);
+
+  const selectedItems = useMemo(
+    () => rawSelectedItems.filter((item) => !deselectedIds.includes(item.id)),
+    [rawSelectedItems, deselectedIds]
+  );
+
+  const handleDeselectGroup = useCallback((_groupKey: string, itemIds: string[]) => {
+    setDeselectedIds((prev) => Array.from(new Set([...prev, ...itemIds])));
+    postToPlugin({ action: 'figjam-deselect', nodeIds: itemIds });
+  }, []);
+
+  const handleClearDeselected = useCallback(() => {
+    setDeselectedIds([]);
+  }, []);
+
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
   const [figmaInput, setFigmaInput] = useState('');
@@ -444,7 +470,7 @@ useEffect(() => {
           // Selection-driven (Miro): the tab shows ONLY the tracked mirrors
           // selected on the FigJam canvas — empty selection = empty Sync (0),
           // never the full board registry.
-          setSelectedItems(trackedToSynced(msg.tracked ?? []));
+          setRawSelectedItems(trackedToSynced(msg.tracked ?? []));
           const foreign = Array.isArray(msg.foreign) ? msg.foreign : [];
           setForeignSelection(
             foreign
@@ -592,8 +618,9 @@ useEffect(() => {
             const until = Date.now() + (retryAfter + 2) * 1000;
             cooldownUntilRef.current = until;
             setCooldownUntil(until);
+            const durationStr = formatDuration(retryAfter);
             throw new Error(
-              `Figma is rate-limiting (plan: ${String(data.planTier || 'unknown')}) — the button tapers and re-arms in ~${Math.min(retryAfter || 9, 15)}s.`
+              `Figma is rate-limiting (plan: ${String(data.planTier || 'unknown')}) — the button tapers and re-arms in ~${durationStr}.`
             );
           }
           throw new Error(
@@ -865,7 +892,10 @@ useEffect(() => {
           );
           for (const entry of group.entries) {
             let dataUrl = images[entry.nodeId];
-            if (!dataUrl) throw new Error(`No render returned for ${entry.nodeId}`);
+            if (!dataUrl) {
+              const nameLabel = entry.items[0]?.nodeName || entry.nodeId;
+              throw new Error(`Frame "${nameLabel}" (ID: ${entry.nodeId}) was not found in Figma (node ID changed or deleted).`);
+            }
             if (group.format === 'svg') {
               dataUrl = await svgToPngDataUrl(dataUrl, group.scale);
             }
@@ -1003,7 +1033,7 @@ useEffect(() => {
       payload.propagate = propagate;
       postToPlugin(payload);
       // Optimistic card update.
-      setSelectedItems((prev) =>
+      setRawSelectedItems((prev) =>
         prev.map((it) =>
           ids.includes(it.id)
             ? {
@@ -1123,7 +1153,11 @@ useEffect(() => {
     miroToken: null,
     tokensLoading,
     selectedItems,
-    setSelectedItems,
+    rawSelectedItems,
+    deselectedIds,
+    handleDeselectGroup,
+    handleClearDeselected,
+    setSelectedItems: setRawSelectedItems,
     isSyncing,
     syncStatus,
     figmaParseError,
