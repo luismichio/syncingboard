@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useAuthTokens } from './useAuthTokens';
 import { useMiroSelection } from './useMiroSelection';
 import { useFigmaImporter } from './useFigmaImporter';
@@ -67,16 +67,17 @@ export function useMiroPlugin(propagate: boolean = false, preserveSize: boolean 
     isAnyImageSelected,
   } = useMiroSelection(isInitMode);
 
-  const [deselectedIds, setDeselectedIds] = useState<string[]>([]);
-
-  // Automatically reset deselected items whenever the board selection identity changes
   const selectionKey = useMemo(
     () => rawSelectedItems.map((i) => i.id).sort().join(','),
     [rawSelectedItems]
   );
-  useEffect(() => {
+  const [prevSelectionKey, setPrevSelectionKey] = useState(selectionKey);
+  const [deselectedIds, setDeselectedIds] = useState<string[]>([]);
+
+  if (prevSelectionKey !== selectionKey) {
+    setPrevSelectionKey(selectionKey);
     setDeselectedIds([]);
-  }, [selectionKey]);
+  }
 
   const selectedItems = useMemo(
     () => rawSelectedItems.filter((item) => !deselectedIds.includes(item.id)),

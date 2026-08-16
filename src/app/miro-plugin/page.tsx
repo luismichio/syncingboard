@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { useMiroPlugin } from './useMiroPlugin';
 import { SyncedImage } from './useMiroSelection';
 import { PLAN } from '@/lib/version';
@@ -48,14 +48,12 @@ function buildGroupedItems(selectedItems: SyncedImage[]): GroupedSyncedImage[] {
   return Object.values(groups);
 }
 
+const emptySubscribe = () => () => {};
+
 export default function MiroPluginPage() {
-  const [mounted, setMounted] = useState<boolean>(false);
+  const mounted = useSyncExternalStore(emptySubscribe, () => true, () => false);
   const [propagate, setPropagate] = useState<boolean>(false);
   const [preserveSize, setPreserveSize] = useState<boolean>(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   const {
     isInitMode,

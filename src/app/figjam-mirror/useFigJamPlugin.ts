@@ -193,17 +193,17 @@ function trackedToSynced(items: FigjamTracked[]): SyncedImage[] {
 
 export function useFigJamPlugin() {
   const { figmaToken, tokensLoading, connectFigma, disconnectFigma } = useAuthTokens(false);
-  const [rawSelectedItems, setRawSelectedItems] = useState<SyncedImage[]>([]);
-  const [deselectedIds, setDeselectedIds] = useState<string[]>([]);
-
-  // Automatically reset deselected items whenever the canvas selection identity changes
   const selectionKey = useMemo(
     () => rawSelectedItems.map((i) => i.id).sort().join(','),
     [rawSelectedItems]
   );
-  useEffect(() => {
+  const [prevSelectionKey, setPrevSelectionKey] = useState(selectionKey);
+  const [deselectedIds, setDeselectedIds] = useState<string[]>([]);
+
+  if (prevSelectionKey !== selectionKey) {
+    setPrevSelectionKey(selectionKey);
     setDeselectedIds([]);
-  }, [selectionKey]);
+  }
 
   const selectedItems = useMemo(
     () => rawSelectedItems.filter((item) => !deselectedIds.includes(item.id)),
