@@ -109,6 +109,7 @@ export function useMiroPlugin(propagate: boolean = false, preserveSize: boolean 
     isDetectingLocal,
     parseFigmaLink,
     detectLocalFigmaSelection,
+    applyLiveFigmaSelection,
     importFigmaScreen,
   } = useFigmaImporter(figmaToken, miroToken, setIsSyncing, updateSyncStatus);
 
@@ -326,6 +327,7 @@ export function useMiroPlugin(propagate: boolean = false, preserveSize: boolean 
     disconnectMiro,
     parseFigmaLink,
     detectLocalFigmaSelection,
+    applyLiveFigmaSelection,
     importFigmaScreen,
     // Penpot importer
     penpotNodeInfo,

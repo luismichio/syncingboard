@@ -153,6 +153,47 @@
               <button id="btn-settings-clear-logs" class="btn-clear" type="button">CLEAR LOGS</button>
             </div>
           </div>
+
+          <div class="section-label" style="margin-top: 12px;">Global Shortcuts</div>
+          <div class="card">
+            <div class="settings-row">
+              <div>
+                <div class="settings-title">Import Selection</div>
+                <div class="settings-desc">Place auto-detected frame on board</div>
+              </div>
+              <input type="text" id="input-hotkey-import" class="hotkey-input" value="Cmd/Ctrl+Shift+I" placeholder="Disabled" readonly />
+            </div>
+
+            <div class="divider"></div>
+
+            <div class="settings-row">
+              <div>
+                <div class="settings-title">Replace Selected</div>
+                <div class="settings-desc">Swap selected canvas image with Figma frame</div>
+              </div>
+              <input type="text" id="input-hotkey-replace" class="hotkey-input" value="Cmd/Ctrl+Shift+R" placeholder="Disabled" readonly />
+            </div>
+
+            <div class="divider"></div>
+
+            <div class="settings-row">
+              <div>
+                <div class="settings-title">Sync Selected</div>
+                <div class="settings-desc">Update selected synced widgets in-place</div>
+              </div>
+              <input type="text" id="input-hotkey-sync" class="hotkey-input" value="Cmd/Ctrl+Shift+S" placeholder="Disabled" readonly />
+            </div>
+
+            <div class="divider"></div>
+
+            <div class="settings-row">
+              <div id="hotkey-status-msg" class="settings-desc">Click a box and press a key combo (Backspace to clear)</div>
+              <div style="display: flex; gap: 6px;">
+                <button id="btn-hotkeys-reset" class="btn-clear" type="button">RESET</button>
+                <button id="btn-hotkeys-save" class="btn-clear btn-accent" type="button">APPLY</button>
+              </div>
+            </div>
+          </div>
         </section>
       </div>
 

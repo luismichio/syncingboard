@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { parseFigmaUrl } from '@/lib/sync/figmaUrlParser';
 import { decodeHtmlEntities } from '@/lib/decodeHtmlEntities';
 import { MiroAdapter } from './MiroAdapter';
@@ -25,9 +25,11 @@ export function useFigmaImporter(
   const [figmaInput, setFigmaInput] = useState<string>('');
   const [figmaNodeInfo, setFigmaNodeInfo] = useState<FigmaNodeInfo | null>(null);
   const [isDetectingLocal, setIsDetectingLocal] = useState<boolean>(false);
+  const lastManualUrlAtRef = useRef<number>(0);
 
   const parseFigmaLink = async (url: string) => {
     setFigmaInput(url);
+    lastManualUrlAtRef.current = Date.now();
     const parsed = parseFigmaUrl(url);
     if (parsed) {
       // Set temporary loading state
@@ -259,12 +261,32 @@ export function useFigmaImporter(
     }
   };
 
+  const applyLiveFigmaSelection = useCallback(
+    (payload: Record<string, unknown>) => {
+      const id = typeof payload.id === 'string' ? payload.id.trim() : '';
+      if (!id) return;
+      // Don't overwrite a manual URL paste for 10 seconds
+      if (Date.now() - lastManualUrlAtRef.current < 10_000) return;
+      const fileKey =
+        typeof payload.fileKey === 'string' && payload.fileKey.trim()
+          ? payload.fileKey.trim()
+          : 'unknown';
+      const rawName = typeof payload.name === 'string' ? payload.name : 'Figma Frame';
+      const name = decodeHtmlEntities(rawName);
+      setFigmaNodeInfo({ fileKey, nodeId: id, name });
+      setFigmaInput(`https://www.figma.com/file/${fileKey}/?node-id=${encodeURIComponent(id)}`);
+      setSyncStatusParent(`Auto-detected: "${name}"`, 'info');
+    },
+    [setSyncStatusParent]
+  );
+
   return {
     figmaInput,
     figmaNodeInfo,
     isDetectingLocal,
     parseFigmaLink,
     detectLocalFigmaSelection,
+    applyLiveFigmaSelection,
     importFigmaScreen,
   };
 }

@@ -478,3 +478,35 @@ input:checked + .toggle-slider:before {
   color: var(--text-muted);
   opacity: 0.45;
 }
+
+/* Global Shortcuts Settings */
+.hotkey-input {
+  width: 162px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 10px;
+  color: var(--accent);
+  background: var(--bg-page);
+  border: 1px solid var(--border-card);
+  border-radius: 4px;
+  padding: 4px 6px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.hotkey-input:focus,
+.hotkey-input.recording {
+  outline: none;
+  border-color: var(--accent);
+  background: rgba(6, 182, 212, 0.12);
+}
+
+.hotkey-input.recording::placeholder {
+  color: var(--accent);
+  opacity: 0.9;
+}
+
+.btn-accent {
+  border-color: var(--accent);
+  color: var(--accent);
+}

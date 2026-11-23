@@ -373,39 +373,115 @@ export async function subscribeRelayLive(
 ): Promise<() => void> {
   const isTauriMode = typeof window !== 'undefined' && localStorage.getItem('syncingboard_use_tauri') === 'true';
 
-  // Penpot runs in the browser sandbox (Chrome LNA blocks loopback), so only Figma routes via local Tauri WS.
-  if (isTauriMode && platform !== 'penpot' && typeof WebSocket !== 'undefined') {
+  // Penpot runs in the browser sandbox (Chrome LNA blocks loopback), so only Figma routes via local Tauri.
+  if (isTauriMode && platform !== 'penpot') {
     let ws: WebSocket | null = null;
+    let sse: EventSource | null = null;
     let active = true;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
     const port = (typeof window !== 'undefined' && localStorage.getItem('syncingboard_bridge_port')) || '4401';
 
-    try {
-      ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
-      ws.onopen = () => {
-        ws?.send(JSON.stringify({
-          action: 'register',
-          pairing_id: pairingId,
-          role: 'target',
-        }));
-      };
-      ws.onmessage = (ev) => {
-        if (!active) return;
-        try {
-          const raw = typeof ev.data === 'string' ? JSON.parse(ev.data) : null;
-          if (raw && (raw.event === eventName || raw.action === eventName) && raw.payload) {
-            handler(raw.payload as Record<string, unknown>);
+    const openDirectSocket = () => {
+      if (!active || typeof WebSocket === 'undefined') return;
+      try {
+        const socket = new WebSocket(`ws://localhost:${port}/ws`);
+        ws = socket;
+        socket.onopen = () => {
+          if (!active) {
+            try { socket.close(); } catch {}
+            return;
           }
-        } catch {}
-      };
-    } catch {
-      // ignore
-    }
+          socket.send(JSON.stringify({
+            action: 'register',
+            pairing_id: pairingId,
+            role: 'target',
+          }));
+        };
+        socket.onmessage = (ev) => {
+          if (!active) return;
+          try {
+            const raw = typeof ev.data === 'string' ? JSON.parse(ev.data) : null;
+            if (raw && (raw.event === eventName || raw.action === eventName) && raw.payload) {
+              handler(raw.payload as Record<string, unknown>);
+            }
+          } catch {}
+        };
+        socket.onclose = () => {
+          if (ws === socket) ws = null;
+          if (active) {
+            retryTimer = setTimeout(openPrimary, 3000);
+          }
+        };
+        socket.onerror = () => {
+          try { socket.close(); } catch {}
+        };
+      } catch {
+        if (active) {
+          retryTimer = setTimeout(openPrimary, 3000);
+        }
+      }
+    };
+
+    const openPrimary = () => {
+      if (!active) return;
+      // 1. Primary: same-origin SSE proxy (/api/bridge/stream) — matches /api/bridge/health & /api/bridge/relay
+      if (typeof EventSource !== 'undefined') {
+        let didOpen = false;
+        try {
+          const streamUrl = `/api/bridge/stream?pairingId=${encodeURIComponent(pairingId)}&event=${encodeURIComponent(eventName)}&port=${encodeURIComponent(port)}`;
+          const es = new EventSource(streamUrl);
+          sse = es;
+          es.onopen = () => {
+            didOpen = true;
+          };
+          es.onmessage = (ev) => {
+            if (!active) return;
+            try {
+              const payload = JSON.parse(ev.data) as Record<string, unknown>;
+              if (payload && typeof payload === 'object') {
+                handler(payload);
+              }
+            } catch {
+              // ignore malformed SSE payloads
+            }
+          };
+          es.onerror = () => {
+            es.close();
+            if (sse === es) sse = null;
+            if (!active) return;
+            if (!didOpen && typeof WebSocket !== 'undefined') {
+              // On hosted Vercel (where /api/bridge/stream can't reach 127.0.0.1), fall back to direct WS
+              openDirectSocket();
+            } else {
+              retryTimer = setTimeout(openPrimary, 3000);
+            }
+          };
+          return;
+        } catch {
+          // Fall through to direct WebSocket
+        }
+      }
+
+      // 2. Secondary: direct loopback WebSocket
+      openDirectSocket();
+    };
+
+    openPrimary();
 
     return () => {
       active = false;
+      if (retryTimer) {
+        clearTimeout(retryTimer);
+        retryTimer = null;
+      }
       if (ws) {
+        ws.onclose = null;
         try { ws.close(); } catch {}
         ws = null;
+      }
+      if (sse) {
+        sse.close();
+        sse = null;
       }
     };
   }

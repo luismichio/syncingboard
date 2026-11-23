@@ -40,8 +40,8 @@ To bypass this browser block, SyncingBoard uses a secure cloud relay pathway (Ab
 ### Why do I get a "Penpot companion is offline" error?
 Penpot plugins run entirely inside the designer's browser tab. If that tab is closed, or if the companion plugin is not actively open and connected, the Ably connection closes. To solve this, open the Penpot editor tab containing your designs, launch the **SyncingBoard Companion** plugin, verify it shows a "Connected" status, and ensure the pairing ID matches the one shown in your Miro sidebar.
 
-### Do I need the Tauri desktop app (SyncBridge) to auto-detect my Figma selection?
-**No.** While the Tauri desktop app can act as a local capability extender (e.g. for native figma client selection querying), you can now use the **Figma Companion Plugin** directly inside the Figma editor. The companion plugin uses Ably WebSockets to broadcast selection events directly from Figma to the Miro sidebar over the cloud relay, meaning it works entirely within the web browser without any local servers or desktop apps.
+### Do I need the Tauri desktop app (SyncingBridge) to auto-detect my Figma selection?
+**No.** Cloud sync and manual selection detection work 100% out of the box using the **Figma Companion Plugin** over the Ably Cloud Relay — no desktop app required. Installing **SyncingBridge** is optional and unlocks **zero-cloud local transport** for Figma Desktop ↔ Miro Desktop (instant live auto-detect, local `exportAsync()` with 0 Figma REST API calls, 50 MB Miro uploads, up to 50 Figma frames per batch, and OS-wide global shortcuts), while Penpot Web continues running seamlessly over Ably Cloud Relay alongside it.
 
 ### Is the Figma Companion plugin required to import or sync screens?
 **No.** The Figma Companion plugin is **only needed for auto-detecting your active selection** in Figma. You can import and sync screens directly into Miro by pasting Figma frame URLs into the Miro sidebar without installing the Figma Companion plugin.

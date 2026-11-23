@@ -404,12 +404,12 @@ yarn build    # Validate production build compilation
 
 ---
 
-## Tauri Desktop App (SyncBridge) (Optional)
+## Tauri Desktop App (SyncingBridge) (Optional)
 
-> [!NOTE]
-> **Planned / Experimental Feature:** The Tauri desktop app (SyncBridge) is **optional and currently in design / planned development (not fully implemented in the v0.13.4 release)**. It is intended for future capabilities such as large image streaming (>4.5MB), Adobe UXP integration, local LLMs, and two-way sync. Day-to-day cloud-native Figma and Penpot sync works 100% out of the box without installing SyncBridge.
+> [!TIP]
+> **Optional Zero-Cloud Local Engine:** **SyncingBridge** is a lightweight Rust/Tauri v2 desktop app that runs a local loopback WebSocket & HTTP broker on `127.0.0.1:4401` (no SSL certificates or `mkcert` required). Day-to-day cloud sync works out of the box without installing SyncingBridge; running it unlocks **0 Ably / 0 Upstash / 0 Vercel / 0 Figma REST API** sync for Figma Desktop ↔ Miro Desktop, up to **50 Figma frames per batch**, **50 MB** image uploads, **live Figma auto-detect**, and **configurable OS-wide global shortcuts**.
 
-### Prerequisites and Build
+### Prerequisites and Local Run
 
 1. **Install Prerequisites:**
    - **Node.js & Yarn** (already installed)
@@ -422,81 +422,23 @@ yarn build    # Validate production build compilation
        sudo apt install libwebkit2gtk-4.1-dev build-essential libssl-dev libxdo-dev libayatana-appindicator3-dev librsvg2-dev
        ```
 
-2. **Build and Run:**
+2. **Run Locally (with Next.js + Tunnel + Tauri in one command):**
    ```bash
-   cd tauri-bridge
-   yarn install
-   yarn tauri dev
+   yarn local:tauri
+   ```
+   Or launch **SyncingBridge** standalone:
+   ```bash
+   yarn tauri:dev
    ```
 
-### Local SSL Certificate (mkcert)
+3. **Build Native Installers (Windows / macOS / Linux):**
+   - Locally: `cd tauri-bridge && yarn tauri build`
+   - Via GitHub Actions: push a `v*` tag (or trigger **Release Tauri Bridge** manually from the GitHub Actions tab) to compile native `.msi`/`.exe`, `.dmg`, and `.AppImage`/`.deb` installers automatically.
 
-Miro runs on `https://miro.com`. The **SyncBridge desktop app** (Tauri/Electron) serves an HTTPS endpoint on localhost that requires a trusted certificate. SyncBridge uses `mkcert` --- a zero-config tool that creates certificates trusted by your system.
-
-> **Chrome web vs Electron:** These certificates are needed for **Miro Desktop (Electron)**, which can connect to localhost. Chrome web has stricter **Private Network Access (PNA)** rules that block browser->localhost connections from public origins regardless of SSL --- this is why the cloud-relay architecture is the default for Penpot. SyncBridge is only needed for capability extension (large images, Adobe UXP, local LLMs), not for day-to-day sync.
-
-> **Important:** The `cert.pem` and `key.pem` files are machine-specific and excluded from git via `.gitignore`. Every developer generates their own.
-
-**Step 1 --- Install `mkcert`:**
-- **Windows:** `winget install FiloSottile.mkcert`
-- **macOS:** `brew install mkcert`
-- **Linux:**
-  ```bash
-  sudo apt install libnss3-tools
-  wget -O mkcert https://github.com/FiloSottile/mkcert/releases/latest/download/mkcert-v1.4.4-linux-amd64
-  chmod +x mkcert
-  sudo mv mkcert /usr/local/bin/
-  ```
-
-**Step 2 --- Install the Local CA (one-time per machine):**
-```bash
-mkcert -install
-```
-
-**Step 3 --- Generate the Certificate:**
-```bash
-cd tauri-bridge/src-tauri/resources
-mkcert \
-  -cert-file cert.pem \
-  -key-file key.pem \
-  local.syncingboard.com \
-  127.0.0.1 \
-  localhost
-```
-
-**Windows (PowerShell):**
-```powershell
-cd tauri-bridge\src-tauri\resources
-mkcert -cert-file cert.pem -key-file key.pem local.syncingboard.com 127.0.0.1 localhost
-```
-
-**Step 4 --- Rebuild:**
-```bash
-cd tauri-bridge
-yarn tauri build    # production
-# or
-yarn tauri dev      # development
-```
-
-> Do not commit `cert.pem` or `key.pem` --- they are already in `.gitignore`.
-
-### DNS Loopback Record
-
-SyncingBoard uses a public DNS A record pointing to `127.0.0.1` so that `local.syncingboard.com` resolves to your local machine with valid TLS.
-
-- **Domain:** `local.syncingboard.com`
-- **Type:** `A`
-- **Value:** `127.0.0.1`
-
-If you fork this project with your own domain:
-1. Add an A record (`local-syncingboard` -> `127.0.0.1`) with your DNS provider.
-   > Squarespace DNS does not accept dots in the Host field. Use a dash (`-`) as a separator.
-2. Update all occurrences of `local.syncingboard.com` in:
-   - `public/penpot-companion-ui.html`
-   - `src/app/miro-plugin/companionRelayClient.ts`
-   - `tauri-bridge/index.html`
-   - `tauri-bridge/src-tauri/src/lib.rs` (comment only)
-3. Regenerate your `cert.pem` / `key.pem` for the new domain.
+### Transport Behavior & Settings
+* **Hybrid Dual-Transport:** When `SyncingBridge (Local)` is enabled in Miro Settings, **Figma Desktop** routes 100% locally (`ws://localhost:4401` + `node.exportAsync()` + Rust Miro `PATCH`), while **Penpot Web** automatically routes over **Ably Cloud Relay** (due to Chrome Local Network Access iframe rules) so both coexist seamlessly.
+* **Configurable Broker Port:** Default `4401` (adjustable in **SyncingBridge → Settings** and Miro/Companion Settings).
+* **Configurable Global Shortcuts:** Default `Ctrl+Shift+I` / `Cmd+Shift+I` (Import), `Ctrl+Shift+R` / `Cmd+Shift+R` (Replace), `Ctrl+Shift+S` / `Cmd+Shift+S` (Sync) — click any shortcut box in **SyncingBridge → Settings** to record a custom combo within a 4-second window (or press `Backspace` to disable).
 
 **Troubleshooting --- DNS Rebinding Protection:**
 

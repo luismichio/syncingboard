@@ -94,6 +94,158 @@ function setupSettings() {
       });
     });
   }
+
+  // Global Shortcuts settings
+  const hotkeyImportInput = document.getElementById('input-hotkey-import') as HTMLInputElement | null;
+  const hotkeyReplaceInput = document.getElementById('input-hotkey-replace') as HTMLInputElement | null;
+  const hotkeySyncInput = document.getElementById('input-hotkey-sync') as HTMLInputElement | null;
+  const btnHotkeysSave = document.getElementById('btn-hotkeys-save');
+  const btnHotkeysReset = document.getElementById('btn-hotkeys-reset');
+  const hotkeyStatusMsg = document.getElementById('hotkey-status-msg');
+
+  const isMac = /Mac|iPhone|iPad|iPod/i.test(navigator.platform || navigator.userAgent);
+  const primaryModLabel = isMac ? 'Cmd' : 'Ctrl';
+
+  const toDisplayHotkey = (raw: string): string =>
+    raw.replace(/CommandOrControl/g, primaryModLabel);
+
+  const toTauriHotkey = (display: string): string =>
+    display.trim().replace(/^(?:Cmd\/Ctrl|Cmd|Ctrl)\b/i, 'CommandOrControl');
+
+  const formatKeyCombo = (e: KeyboardEvent): string | null => {
+    const mods: string[] = [];
+    if (e.ctrlKey || e.metaKey) mods.push(primaryModLabel);
+    if (e.altKey) mods.push('Alt');
+    if (e.shiftKey) mods.push('Shift');
+
+    const key = e.key;
+    if (['Control', 'Shift', 'Alt', 'Meta'].includes(key)) return null;
+    if (mods.length === 0) return null;
+
+    let normalizedKey = key.length === 1 ? key.toUpperCase() : key;
+    if (normalizedKey === ' ') normalizedKey = 'Space';
+    return [...mods, normalizedKey].join('+');
+  };
+
+  const attachRecorder = (input: HTMLInputElement | null) => {
+    if (!input) return;
+    let previousValue = input.value;
+    let isRecording = false;
+    let countdownTimer: ReturnType<typeof setInterval> | null = null;
+    let remainingSecs = 0;
+
+    const stopRecording = (restorePrevious: boolean) => {
+      if (!isRecording) return;
+      isRecording = false;
+      if (countdownTimer) {
+        clearInterval(countdownTimer);
+        countdownTimer = null;
+      }
+      input.classList.remove('recording');
+      input.placeholder = 'Disabled';
+      if (restorePrevious) {
+        input.value = previousValue;
+      }
+    };
+
+    input.addEventListener('focus', () => {
+      previousValue = input.value;
+      isRecording = true;
+      remainingSecs = 4;
+      input.value = '';
+      input.placeholder = `Press keys… (${remainingSecs}s)`;
+      input.classList.add('recording');
+
+      countdownTimer = setInterval(() => {
+        remainingSecs -= 1;
+        if (remainingSecs <= 0) {
+          stopRecording(true);
+          input.blur();
+        } else {
+          input.placeholder = `Press keys… (${remainingSecs}s)`;
+        }
+      }, 1000);
+    });
+
+    input.addEventListener('blur', () => {
+      stopRecording(true);
+    });
+
+    input.addEventListener('keydown', (e) => {
+      if (!isRecording) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.key === 'Backspace' || e.key === 'Delete') {
+        stopRecording(false);
+        input.value = '';
+        input.blur();
+        return;
+      }
+      if (e.key === 'Escape') {
+        stopRecording(true);
+        input.blur();
+        return;
+      }
+      const combo = formatKeyCombo(e);
+      if (combo) {
+        stopRecording(false);
+        input.value = combo;
+        input.blur();
+      }
+    });
+  };
+
+  attachRecorder(hotkeyImportInput);
+  attachRecorder(hotkeyReplaceInput);
+  attachRecorder(hotkeySyncInput);
+
+  if (btnHotkeysSave) {
+    btnHotkeysSave.addEventListener('click', async () => {
+      const payload = {
+        import: toTauriHotkey(hotkeyImportInput?.value || ''),
+        replace: toTauriHotkey(hotkeyReplaceInput?.value || ''),
+        sync: toTauriHotkey(hotkeySyncInput?.value || ''),
+      };
+      try {
+        await invoke('set_hotkeys', payload);
+        if (hotkeyStatusMsg) hotkeyStatusMsg.textContent = 'Shortcuts saved and active.';
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (hotkeyStatusMsg) hotkeyStatusMsg.textContent = `Error: ${msg}`;
+        appendLog(`[Hotkeys] Failed to update shortcuts: ${msg}`);
+      }
+    });
+  }
+
+  if (btnHotkeysReset) {
+    btnHotkeysReset.addEventListener('click', async () => {
+      const defaults = {
+        import: 'CommandOrControl+Shift+I',
+        replace: 'CommandOrControl+Shift+R',
+        sync: 'CommandOrControl+Shift+S',
+      };
+      if (hotkeyImportInput) hotkeyImportInput.value = toDisplayHotkey(defaults.import);
+      if (hotkeyReplaceInput) hotkeyReplaceInput.value = toDisplayHotkey(defaults.replace);
+      if (hotkeySyncInput) hotkeySyncInput.value = toDisplayHotkey(defaults.sync);
+      try {
+        await invoke('set_hotkeys', defaults);
+        if (hotkeyStatusMsg) hotkeyStatusMsg.textContent = 'Restored default shortcuts.';
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (hotkeyStatusMsg) hotkeyStatusMsg.textContent = `Error: ${msg}`;
+      }
+    });
+  }
+
+  void invoke<{ import: string; replace: string; sync: string }>('get_hotkeys')
+    .then((cfg) => {
+      if (hotkeyImportInput) hotkeyImportInput.value = toDisplayHotkey(cfg.import || '');
+      if (hotkeyReplaceInput) hotkeyReplaceInput.value = toDisplayHotkey(cfg.replace || '');
+      if (hotkeySyncInput) hotkeySyncInput.value = toDisplayHotkey(cfg.sync || '');
+    })
+    .catch(() => {
+      // keep defaults
+    });
 }
 
 // Listen to bridge_status events emitted by Rust

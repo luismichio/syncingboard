@@ -1,11 +1,11 @@
 'use client';
 
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useMiroPlugin } from './useMiroPlugin';
 import { SyncedImage } from './useMiroSelection';
 import { PLAN } from '@/lib/version';
 import { getOrCreatePairingId, rotatePairingId } from '@/lib/sync/pairingId';
-import { heartbeatRelaySession, releaseLocalRelaySession, setRelayIdentity, sha256Hex } from '@/lib/sync/companionRelayClient';
+import { heartbeatRelaySession, releaseLocalRelaySession, setRelayIdentity, sha256Hex, subscribeRelayLive } from '@/lib/sync/companionRelayClient';
 import { AppHeader } from './components/AppHeader';
 import { TabNav } from './components/TabNav';
 import { BoardStatusFooter } from './components/BoardStatusFooter';
@@ -75,6 +75,7 @@ export default function MiroPluginPage() {
     disconnectMiro,
     parseFigmaLink,
     detectLocalFigmaSelection,
+    applyLiveFigmaSelection,
     importFigmaScreen,
     penpotNodeInfo,
     isDetectingPenpotLocal,
@@ -143,6 +144,108 @@ export default function MiroPluginPage() {
     const interval = setInterval(check, 15_000);
     return () => clearInterval(interval);
   }, [useTauri]);
+
+  // Live auto-detect for Figma selection when connected via local Tauri SyncingBridge (0 Ably/Upstash cost)
+  const applyLiveFigmaSelectionRef = useRef(applyLiveFigmaSelection);
+  useEffect(() => {
+    applyLiveFigmaSelectionRef.current = applyLiveFigmaSelection;
+  }, [applyLiveFigmaSelection]);
+
+  useEffect(() => {
+    if (!useTauri || !pairingId) return;
+    let cancelled = false;
+    let unsubscribe: (() => void) | null = null;
+
+    void subscribeRelayLive(pairingId, 'figma', 'selection', (payload) => {
+      if (!cancelled) {
+        applyLiveFigmaSelectionRef.current(payload);
+      }
+    })
+      .then((cleanup) => {
+        if (cancelled) {
+          cleanup();
+        } else {
+          unsubscribe = cleanup;
+        }
+      })
+      .catch(() => {
+        // Local bridge may be restarting; manual detect still works
+      });
+
+    return () => {
+      cancelled = true;
+      if (unsubscribe) unsubscribe();
+    };
+  }, [useTauri, pairingId]);
+
+  // Global Tauri Hotkey listener (Ctrl/Cmd+Shift+I import, R replace, S sync)
+  const hotkeyHandlersRef = useRef({
+    onImport: () => {},
+    onReplace: () => {},
+    onSync: () => {},
+  });
+  useEffect(() => {
+    hotkeyHandlersRef.current = {
+      onImport: () => {
+        if (isSyncing || !figmaNodeInfo || !miroToken) return;
+        void importFigmaScreen(importFormat, importScale);
+      },
+      onReplace: () => {
+        if (isSyncing || !figmaNodeInfo || !miroToken) return;
+        void replaceSelectedWidget(
+          'figma',
+          figmaNodeInfo.fileKey,
+          figmaNodeInfo.nodeId,
+          figmaNodeInfo.name,
+          importFormat,
+          importScale
+        );
+      },
+      onSync: () => {
+        if (isSyncing || !miroToken || selectedItems.length === 0) return;
+        void syncSelectedScreens();
+      },
+    };
+  }, [
+    isSyncing,
+    figmaNodeInfo,
+    miroToken,
+    importFormat,
+    importScale,
+    importFigmaScreen,
+    replaceSelectedWidget,
+    selectedItems.length,
+    syncSelectedScreens,
+  ]);
+
+  useEffect(() => {
+    if (!useTauri || !pairingId) return;
+    let cancelled = false;
+    let unsubscribe: (() => void) | null = null;
+
+    void subscribeRelayLive(pairingId, 'figma', 'hotkey', (payload) => {
+      if (cancelled) return;
+      const action = typeof payload.action === 'string' ? payload.action : '';
+      if (action === 'import') hotkeyHandlersRef.current.onImport();
+      else if (action === 'replace') hotkeyHandlersRef.current.onReplace();
+      else if (action === 'sync') hotkeyHandlersRef.current.onSync();
+    })
+      .then((cleanup) => {
+        if (cancelled) {
+          cleanup();
+        } else {
+          unsubscribe = cleanup;
+        }
+      })
+      .catch(() => {
+        // Ignore transient bridge restart
+      });
+
+    return () => {
+      cancelled = true;
+      if (unsubscribe) unsubscribe();
+    };
+  }, [useTauri, pairingId]);
 
   const handleToggleTauri = async () => {
     if (useTauri) {

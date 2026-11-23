@@ -109,6 +109,17 @@ Pairing ID:  [ ???????????????? ]  [ Reveal ]  [ Copy ]
 
 ---
 
+## SyncingBridge (Optional Zero-Cloud Local Mode)
+
+For power users running **Figma Desktop** and **Miro Desktop**, the optional **SyncingBridge** (Tauri v2) desktop app replaces the cloud relay with a local Rust broker on `localhost:4401`:
+
+* **Zero-Cloud Figma Pipeline:** Exports open Figma frames locally via `node.exportAsync()` (0 Figma REST API calls, bypassing Figma's Starter 20/month REST cap) and uploads directly to Miro REST API v2 from Rust (0 Vercel calls, 50 MB payload limit).
+* **Hybrid Dual-Transport:** Figma Desktop runs locally over SyncingBridge (up to **50 frames per batch**), while Penpot Web automatically uses Ably Cloud Relay (up to **3 frames per batch**) side by side with zero cross-talk.
+* **Live Figma Auto-Detect:** Clicking any frame in Figma Desktop updates Miro's **Import → Figma** tab automatically in real time — no manual "Detect" click needed.
+* **Configurable Global Shortcuts:** Trigger **Import** (`Ctrl/Cmd+Shift+I`), **Replace** (`Ctrl/Cmd+Shift+R`), or **Sync** (`Ctrl/Cmd+Shift+S`) directly from Figma or Miro without touching the sidebar. Click any shortcut box in **SyncingBridge → Settings** to record custom bindings.
+
+---
+
 ## Explore More Documentation
 
 * [Quickstart Setup Guide](/docs/setup) - Learn how to set up SyncingBoard in 2 minutes.

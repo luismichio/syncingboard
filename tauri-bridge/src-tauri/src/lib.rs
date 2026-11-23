@@ -19,6 +19,24 @@ use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{TrayIconBuilder, TrayIconEvent};
 use tauri::Manager;
 use tauri::Emitter;
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct HotkeyConfig {
+    import: String,
+    replace: String,
+    sync: String,
+}
+
+impl Default for HotkeyConfig {
+    fn default() -> Self {
+        Self {
+            import: "CommandOrControl+Shift+I".to_string(),
+            replace: "CommandOrControl+Shift+R".to_string(),
+            sync: "CommandOrControl+Shift+S".to_string(),
+        }
+    }
+}
 
 #[derive(Clone)]
 struct AppState {
@@ -38,6 +56,8 @@ struct AppState {
     broker_port: Arc<Mutex<u16>>,
     // Watch sender to trigger dynamic port rebinding
     port_tx: Arc<watch::Sender<u16>>,
+    // Configurable global hotkeys
+    hotkeys: Arc<Mutex<HotkeyConfig>>,
     // Live service connections (figma = local Figma companion connected; miro = linked)
     service_connections: Arc<Mutex<HashMap<String, bool>>>,
     app_handle: Arc<Mutex<Option<tauri::AppHandle>>>,
@@ -95,6 +115,111 @@ impl AppState {
             }
         }
     }
+
+    async fn broadcast_hotkey(&self, action: &str, shortcut_label: &str) {
+        if !*self.broker_enabled.lock().await {
+            return;
+        }
+        let payload = serde_json::json!({
+            "action": "broadcast",
+            "event": "hotkey",
+            "payload": {
+                "action": action,
+                "shortcut": shortcut_label,
+                "ts": Date_now_secs(),
+            }
+        })
+        .to_string();
+
+        let senders: Vec<broadcast::Sender<(u64, String)>> = {
+            let channels = self.channels.lock().await;
+            channels.values().cloned().collect()
+        };
+
+        for sender in &senders {
+            // conn_id = 0 denotes server-originated broadcast (delivered to all subscribers)
+            let _ = sender.send((0, payload.clone()));
+        }
+
+        self.log(
+            "Hotkey",
+            format!("Triggered '{}' ({}) -> {} channel(s)", action, shortcut_label, senders.len()),
+        )
+        .await;
+    }
+}
+
+fn hotkeys_config_path(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
+    app.path()
+        .app_config_dir()
+        .ok()
+        .map(|dir| dir.join("hotkeys.json"))
+}
+
+fn load_hotkeys_from_disk(app: &tauri::AppHandle) -> HotkeyConfig {
+    if let Some(path) = hotkeys_config_path(app) {
+        if let Ok(content) = std::fs::read_to_string(&path) {
+            if let Ok(cfg) = serde_json::from_str::<HotkeyConfig>(&content) {
+                return cfg;
+            }
+        }
+    }
+    HotkeyConfig::default()
+}
+
+fn save_hotkeys_to_disk(app: &tauri::AppHandle, cfg: &HotkeyConfig) {
+    if let Some(path) = hotkeys_config_path(app) {
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        if let Ok(json) = serde_json::to_string_pretty(cfg) {
+            let _ = std::fs::write(&path, json);
+        }
+    }
+}
+
+fn register_hotkeys(app: &tauri::AppHandle, state: AppState, cfg: &HotkeyConfig) -> Result<(), String> {
+    let gs = app.global_shortcut();
+    let _ = gs.unregister_all();
+
+    let entries: [(&str, &str); 3] = [
+        ("import", cfg.import.trim()),
+        ("replace", cfg.replace.trim()),
+        ("sync", cfg.sync.trim()),
+    ];
+
+    // Validate all non-empty shortcuts first so partial registration doesn't leave inconsistent state
+    let mut parsed: Vec<(&'static str, String, Shortcut)> = Vec::new();
+    for (action_name, raw) in entries {
+        if raw.is_empty() {
+            continue;
+        }
+        let sc: Shortcut = raw
+            .parse()
+            .map_err(|e| format!("Invalid shortcut '{}' for {}: {:?}", raw, action_name, e))?;
+        let action_static: &'static str = match action_name {
+            "import" => "import",
+            "replace" => "replace",
+            _ => "sync",
+        };
+        parsed.push((action_static, raw.to_string(), sc));
+    }
+
+    for (action_static, label, sc) in parsed {
+        let state_cb = state.clone();
+        gs.on_shortcut(sc, move |_app, _shortcut, event| {
+            if event.state == ShortcutState::Pressed {
+                let st = state_cb.clone();
+                let lbl = label.clone();
+                tauri::async_runtime::spawn(async move {
+                    st.broadcast_hotkey(action_static, &lbl).await;
+                });
+            }
+        })
+        .map_err(|e| format!("Failed to register shortcut for {}: {}", action_static, e))?;
+    }
+
+    Ok(())
 }
 
 #[derive(Deserialize, Serialize, Debug)]
@@ -131,6 +256,7 @@ pub fn run() {
         enabled_tx: Arc::new(enabled_tx),
         broker_port: Arc::new(Mutex::new(4401)),
         port_tx: Arc::new(port_tx),
+        hotkeys: Arc::new(Mutex::new(HotkeyConfig::default())),
         service_connections: Arc::new(Mutex::new(HashMap::new())),
         app_handle: Arc::new(Mutex::new(None)),
     };
@@ -143,11 +269,25 @@ pub fn run() {
     tauri::Builder::default()
         .manage(state.clone())
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![get_bridge_status, set_broker_enabled, set_broker_port])
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .invoke_handler(tauri::generate_handler![
+            get_bridge_status,
+            set_broker_enabled,
+            set_broker_port,
+            get_hotkeys,
+            set_hotkeys
+        ])
         .setup(move |app| {
             let handle = app.handle().clone();
             let app_handle_clone = state.app_handle.clone();
+            let loaded_hotkeys = load_hotkeys_from_disk(&handle);
+            let hotkeys_state = state.clone();
+            let hotkeys_for_setup = loaded_hotkeys.clone();
+            if let Err(err) = register_hotkeys(&handle, hotkeys_state.clone(), &hotkeys_for_setup) {
+                eprintln!("Global shortcut registration warning: {}", err);
+            }
             tauri::async_runtime::spawn(async move {
+                *hotkeys_state.hotkeys.lock().await = loaded_hotkeys;
                 *app_handle_clone.lock().await = Some(handle.clone());
                 handle.emit("bridge_status", serde_json::json!({
                     "status": "starting",
@@ -1026,6 +1166,41 @@ async fn set_broker_port(port: u16, state: tauri::State<'_, AppState>) -> Result
     }))
 }
 
+#[tauri::command]
+async fn get_hotkeys(state: tauri::State<'_, AppState>) -> Result<HotkeyConfig, String> {
+    Ok(state.hotkeys.lock().await.clone())
+}
+
+#[tauri::command]
+async fn set_hotkeys(
+    import: String,
+    replace: String,
+    sync: String,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<HotkeyConfig, String> {
+    let next = HotkeyConfig {
+        import: import.trim().to_string(),
+        replace: replace.trim().to_string(),
+        sync: sync.trim().to_string(),
+    };
+    register_hotkeys(&app, state.inner().clone(), &next)?;
+    *state.hotkeys.lock().await = next.clone();
+    save_hotkeys_to_disk(&app, &next);
+    state
+        .log(
+            "Hotkeys",
+            format!(
+                "Updated shortcuts (Import: '{}', Replace: '{}', Sync: '{}')",
+                if next.import.is_empty() { "off" } else { &next.import },
+                if next.replace.is_empty() { "off" } else { &next.replace },
+                if next.sync.is_empty() { "off" } else { &next.sync }
+            ),
+        )
+        .await;
+    Ok(next)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1069,6 +1244,7 @@ mod tests {
             enabled_tx: Arc::new(enabled_tx),
             broker_port: Arc::new(Mutex::new(4401)),
             port_tx: Arc::new(port_tx),
+            hotkeys: Arc::new(Mutex::new(HotkeyConfig::default())),
             service_connections: Arc::new(Mutex::new(HashMap::new())),
             app_handle: Arc::new(Mutex::new(None)),
         };
