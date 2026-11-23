@@ -189,7 +189,11 @@ function sendRelaySessionSignal(action: 'heartbeat' | 'release' | 'transfer'): v
 }
 
 export function releaseLocalRelaySession(): void {
-  void sendRelaySessionSignal('release');
+  const hadClient = Boolean(globalAblyClient);
+  closeGlobalAblyConnection();
+  if (!hadClient) {
+    void sendRelaySessionSignal('release');
+  }
 }
 
 export function heartbeatRelaySession(): void {
@@ -366,6 +370,44 @@ export async function subscribeRelayLive(
   eventName: string,
   handler: (data: Record<string, unknown>) => void
 ): Promise<() => void> {
+  const isTauriMode = typeof window !== 'undefined' && localStorage.getItem('syncingboard_use_tauri') === 'true';
+
+  if (isTauriMode && typeof WebSocket !== 'undefined') {
+    let ws: WebSocket | null = null;
+    let active = true;
+    const port = (typeof window !== 'undefined' && localStorage.getItem('syncingboard_bridge_port')) || '4401';
+
+    try {
+      ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+      ws.onopen = () => {
+        ws?.send(JSON.stringify({
+          action: 'register',
+          pairing_id: pairingId,
+          role: 'target',
+        }));
+      };
+      ws.onmessage = (ev) => {
+        if (!active) return;
+        try {
+          const raw = typeof ev.data === 'string' ? JSON.parse(ev.data) : null;
+          if (raw && (raw.event === eventName || raw.action === eventName) && raw.payload) {
+            handler(raw.payload as Record<string, unknown>);
+          }
+        } catch {}
+      };
+    } catch {
+      // ignore
+    }
+
+    return () => {
+      active = false;
+      if (ws) {
+        try { ws.close(); } catch {}
+        ws = null;
+      }
+    };
+  }
+
   const channel = await getAblyConnection(pairingId, platform);
   liveSubscriptionCount += 1;
   relayKeepAlive = true;
@@ -405,7 +447,139 @@ export async function subscribeRelayLive(
   };
 }
 
+async function callLocalTauriRelay(body: RelayRequestBody): Promise<RelayJson> {
+  const port = (typeof window !== 'undefined' && localStorage.getItem('syncingboard_bridge_port')) || '4401';
+  // 1. Primary: relative Next.js backend proxy (/api/bridge/relay)
+  try {
+    const res = await fetch('/api/bridge/relay', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-bridge-port': port,
+      },
+      body: JSON.stringify({ ...body, port }),
+      signal: AbortSignal.timeout(body.timeoutMs || 8000),
+      cache: 'no-store',
+    });
+    if (res.ok) {
+      const payload = (await res.json()) as { ok?: boolean; data?: RelayJson };
+      if (payload && payload.data !== undefined) {
+        return payload.data;
+      }
+    } else {
+      const errData = (await res.json().catch(() => ({}))) as { error?: string };
+      if (errData.error) {
+        throw new Error(errData.error);
+      }
+    }
+  } catch (err: unknown) {
+    if (typeof WebSocket === 'undefined') {
+      throw err;
+    }
+  }
+
+  // 2. Direct WebSocket fallback
+  const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+  const reqId = 'req_' + Math.random().toString(36).slice(2, 9);
+  const timeoutMs = body.timeoutMs || 8000;
+
+  return new Promise<RelayJson>((resolve, reject) => {
+    let resolved = false;
+
+    const cleanup = () => {
+      resolved = true;
+      try {
+        ws.close();
+      } catch {
+        // ignore
+      }
+      clearTimeout(timer);
+    };
+
+    const timer = setTimeout(() => {
+      if (!resolved) {
+        cleanup();
+        reject(new Error(`Local Bridge request timed out after ${timeoutMs / 1000}s.`));
+      }
+    }, timeoutMs);
+
+    ws.onopen = () => {
+      // 1. Register channel
+      ws.send(JSON.stringify({
+        action: 'register',
+        pairing_id: body.pairingId,
+        role: 'target',
+      }));
+
+      // 2. Broadcast command to companion
+      ws.send(JSON.stringify({
+        action: 'broadcast',
+        pairing_id: body.pairingId,
+        event: 'command',
+        payload: {
+          id: reqId,
+          action: body.action,
+          format: body.format,
+          scale: body.scale,
+          shapeId: body.shapeId,
+          client: 'miro',
+        },
+      }));
+    };
+
+    ws.onmessage = (ev) => {
+      if (resolved) return;
+      try {
+        const raw = typeof ev.data === 'string' ? JSON.parse(ev.data) : null;
+        if (!raw) return;
+
+        // Handle broadcasted result event from companion
+        if ((raw.event === 'result' || raw.action === 'result') && raw.payload) {
+          const payload = raw.payload as { id?: string; requestId?: string; data?: RelayJson; error?: string };
+          const responseId = payload.id || payload.requestId;
+          if (!responseId || responseId === reqId) {
+            cleanup();
+            if (payload.error) {
+              reject(new Error(payload.error));
+            } else {
+              resolve(payload.data ?? (payload as unknown as RelayJson));
+            }
+          }
+        }
+      } catch {
+        // ignore
+      }
+    };
+
+    ws.onerror = () => {
+      if (!resolved) {
+        cleanup();
+        reject(new Error('Local Bridge WebSocket connection failed.'));
+      }
+    };
+  });
+}
+
 export async function callRelay(body: RelayRequestBody): Promise<RelayJson> {
+  const isTauriMode = typeof window !== 'undefined' && localStorage.getItem('syncingboard_use_tauri') === 'true';
+
+  if (isTauriMode && typeof WebSocket !== 'undefined') {
+    try {
+      return await callLocalTauriRelay(body);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const isBridgeConnectionFailure =
+        msg.includes('Local Bridge WebSocket connection failed') ||
+        msg.includes('Failed to connect to local SyncingBridge') ||
+        msg.includes('SyncingBridge is unreachable');
+      if (!isBridgeConnectionFailure) {
+        throw err;
+      }
+      // Transient fallback to Ably Cloud Relay for this call without clearing
+      // the user's syncingboard_use_tauri preference (so Tauri auto-resumes on restart).
+    }
+  }
+
   activeRelayCalls += 1;
   clearIdleCloseTimer();
   try {
@@ -592,29 +766,51 @@ export async function callPenpotMcpTool(
 }
 
 /**
- * Queries local selection inside the active Figma Desktop App via SyncBridge.
+ * Broadcasts sync progress and status notifications to the local SyncingBridge
+ * and companion plugins for real-time visibility.
  */
-export async function callFigmaSelectionTauri(): Promise<{ id: string; name: string; fileKey: string } | null> {
-  if (typeof window === 'undefined' || localStorage.getItem('syncingboard_use_tauri') !== 'true') {
-    return null;
-  }
+export async function broadcastSyncActivity(pairingId: string, message: string): Promise<void> {
+  const isTauriMode = typeof window !== 'undefined' && localStorage.getItem('syncingboard_use_tauri') === 'true';
+  if (!pairingId || !isTauriMode) return;
+  const port = (typeof window !== 'undefined' && localStorage.getItem('syncingboard_bridge_port')) || '4401';
 
   try {
-    const res = await fetch('https://local.syncingboard.com:4401/detect-figma', {
+    const res = await fetch('/api/bridge/relay', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      targetAddressSpace: 'loopback',
-    } as unknown as RequestInit);
-
-    if (!res.ok) return null;
-
-    const payload = (await res.json()) as { error?: string; data?: { id: string; name: string; fileKey: string } | null };
-    return payload.data || null;
+      headers: {
+        'Content-Type': 'application/json',
+        'x-bridge-port': port,
+      },
+      body: JSON.stringify({
+        pairingId,
+        port,
+        action: 'sync-event',
+        message,
+      }),
+      cache: 'no-store',
+    });
+    if (res.ok) return;
   } catch {
-    return null;
+    // Fall through to direct WebSocket broadcast
+  }
+
+  if (typeof WebSocket !== 'undefined') {
+    try {
+      const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+      ws.onopen = () => {
+        ws.send(JSON.stringify({
+          action: 'broadcast',
+          pairing_id: pairingId,
+          event: 'sync-event',
+          payload: { message },
+        }));
+        ws.close();
+      };
+    } catch {
+      // Ignore notification failures
+    }
   }
 }
-
 
 /**
  * Moves the per-user session binding to THIS board (1 active board per Miro

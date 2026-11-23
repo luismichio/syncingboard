@@ -9,6 +9,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Tauri Desktop Bridge — Native WebSocket Broker (`ws://127.0.0.1:4401`)** — replaced the self-signed HTTPS server in `tauri-bridge/src-tauri/src/lib.rs` with an Axum/Tokio WebSocket & HTTP broker (`/ws`, `/relay`, `/health`, `/miro/connect`) with Private Network Access (`Access-Control-Allow-Private-Network: true`), live `sources` / `targets` channel tracking, pause/resume controls (`set_broker_enabled`), and zero-restart dynamic port rebinding (`set_broker_port`).
+- **Zero-Cloud Local Transport Adapter (`src/lib/sync/tauriBridgeClient.ts` & `companionRelayClient.ts`)** — added 3-tier local broker probing (`/api/bridge/health`, `ws://127.0.0.1:4401/ws`, `http://127.0.0.1:4401/health`), local WebSocket command/selection/export routing in both Miro/FigJam and Companion UIs (`src/companion-core/runtime.ts`), and automatic fallback to Ably Cloud Relay if the desktop bridge disconnects.
+- **Cloud Lease Release on Local Bridge Activation** — enabling `SyncingBridge (Local)` in Miro or FigJam immediately closes any open Ably connection and releases the community cloud slot lease via `releaseLocalRelaySession()`.
+
 ## [0.17.2] - 2026-08-16
 
 ### Added

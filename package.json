@@ -18,6 +18,8 @@
   "scripts": {
     "dev": "node scripts/build-companion.mjs && node scripts/inject-version.mjs && next dev",
     "local": "node scripts/start-local-tunnel.mjs",
+    "local:tauri": "node scripts/start-local-tunnel.mjs --tauri",
+    "tauri:dev": "yarn --cwd tauri-bridge tauri dev",
     "build": "node scripts/build-companion.mjs && node scripts/inject-version.mjs && next build",
     "build:companion": "node scripts/build-companion.mjs",
     "start": "next start",

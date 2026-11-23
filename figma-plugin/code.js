@@ -10,7 +10,7 @@ const IS_FIGJAM = EDITOR_TYPE !== 'figma';
 
 figma.showUI(__html__, {
   width: 320,
-  height: 650,
+  height: 700,
   themeColors: true,
 });
 

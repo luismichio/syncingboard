@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { parseFigmaUrl } from '@/lib/sync/figmaUrlParser';
 import { decodeHtmlEntities } from '@/lib/decodeHtmlEntities';
 import { MiroAdapter } from './MiroAdapter';
+import { broadcastSyncActivity } from '@/lib/sync/companionRelayClient';
 
 export interface FigmaNodeInfo {
   fileKey: string;
@@ -67,64 +68,42 @@ export function useFigmaImporter(
   };
 
   const detectLocalFigmaSelection = async () => {
-    setIsDetectingLocal(true);
+    setIsDetectingLocal(true);
     setSyncStatusParent('Waiting for the Figma Companion — select a frame in Figma…', 'progress');
-    
-    const useTauri = typeof window !== 'undefined' && localStorage.getItem('syncingboard_use_tauri') === 'true';
-    if (useTauri) {
-      try {
-        const { callFigmaSelectionTauri } = await import('@/lib/sync/companionRelayClient');
-        const selection = await callFigmaSelectionTauri();
-        if (selection) {
-          setFigmaNodeInfo({
-            fileKey: selection.fileKey,
-            nodeId: selection.id,
-            name: selection.name ? decodeHtmlEntities(selection.name) : 'Figma Screen',
-          });
-          setSyncStatusParent('Local Figma selection detected via SyncBridge!');
-        } else {
-          throw new Error('SyncBridge returned empty Figma selection details. Make sure your design file is open.');
-        }
-      } catch (err: unknown) {
-        const errMsg = err instanceof Error ? err.message : String(err);
-        setSyncStatusParent(`SyncBridge Figma detection failed: ${errMsg}`);
-      } finally {
-        setIsDetectingLocal(false);
-      }
-      return;
-    }
 
     try {
       const { callRelay, getOrCreatePairingId } = await import('@/lib/sync/companionRelayClient');
       const pairingId = getOrCreatePairingId();
 
-        if (!pairingId) {
-          throw new Error('Pairing ID is not set. Enter a pairing ID in settings first.');
-        }
+      if (!pairingId) {
+        throw new Error('Pairing ID is not set. Enter a pairing ID in settings first.');
+      }
 
-        const data = await callRelay({
-          pairingId,
-          platform: 'figma',
-          action: 'select',
-          timeoutMs: 8_000,
+      const data = await callRelay({
+        pairingId,
+        platform: 'figma',
+        action: 'select',
+        timeoutMs: 8_000,
+      });
+
+      const payload = data as { id?: string; name?: string; fileKey?: string } | null;
+      if (payload && payload.id && payload.fileKey) {
+        const safeDetectedName = payload.name ? decodeHtmlEntities(payload.name) : 'Figma Screen';
+        setFigmaNodeInfo({
+          fileKey: payload.fileKey,
+          nodeId: payload.id,
+          name: safeDetectedName,
         });
-
-        const payload = data as { id?: string; name?: string; fileKey?: string } | null;
-        if (payload && payload.id && payload.fileKey) {
-          setFigmaNodeInfo({
-            fileKey: payload.fileKey,
-            nodeId: payload.id,
-            name: payload.name ? decodeHtmlEntities(payload.name) : 'Figma Screen',
-          });
-          setSyncStatusParent(`Detected Figma companion frame: "${payload.name ? decodeHtmlEntities(payload.name) : 'Unnamed'}"`);
-        } else {
-          throw new Error('Figma companion returned empty selection. Make sure Figma is open and a frame is selected.');
-        }
-      } catch (relayErr: unknown) {
-        const relayMsg = relayErr instanceof Error ? relayErr.message : String(relayErr);
-        setSyncStatusParent(`Detection failed: ${relayMsg} (Tip: Open Figma Companion Plugin and connect using the same Pairing ID.)`);
-        console.warn('Figma Relay selection fail:', relayErr);
-      } finally {
+        setSyncStatusParent(`Detected Figma companion frame: "${safeDetectedName}"`);
+        void broadcastSyncActivity(pairingId, `Detected Figma frame: "${safeDetectedName}"`);
+      } else {
+        throw new Error('Figma companion returned empty selection. Make sure Figma is open and a frame is selected.');
+      }
+    } catch (relayErr: unknown) {
+      const relayMsg = relayErr instanceof Error ? relayErr.message : String(relayErr);
+      setSyncStatusParent(`Detection failed: ${relayMsg} (Tip: Open Figma Companion Plugin and connect using the same Pairing ID.)`);
+      console.warn('Figma Relay selection fail:', relayErr);
+    } finally {
       setIsDetectingLocal(false);
     }
   };
@@ -141,8 +120,11 @@ export function useFigmaImporter(
       const x = viewport.x + viewport.width / 2;
       const y = viewport.y + viewport.height / 2;
 
-      // Read default scale settings from user's global settings configuration
+      const fallbackName = figmaNodeInfo.name || figmaNodeInfo.nodeId;
+      const safeName = decodeHtmlEntities(fallbackName);
+      const pairingId = typeof window !== 'undefined' ? localStorage.getItem('syncingboard_pairing_id') || '' : '';
       const resolvedScale = scale ?? (typeof window !== 'undefined' ? Number(localStorage.getItem('default_png_scale') || '1') : 1);
+      void broadcastSyncActivity(pairingId, `Importing "${safeName}" into Miro board...`);
 
       setSyncStatusParent('Rendering Figma frame...', 'progress');
 
@@ -170,8 +152,6 @@ export function useFigmaImporter(
         throw new Error('Figma batch render returned no image for the specified node.');
       }
 
-      const fallbackName = figmaNodeInfo.name || figmaNodeInfo.nodeId;
-      const safeName = decodeHtmlEntities(fallbackName);
       const titleTag = `${safeName} [FigmaSync|${figmaNodeInfo.fileKey}|${figmaNodeInfo.nodeId}]`;
 
       const node = await new MiroAdapter(miro.board).createOrUpdate({
@@ -238,6 +218,7 @@ export function useFigmaImporter(
         }
 
         setSyncStatusParent('✓ Image placed successfully!', 'success');
+        void broadcastSyncActivity(pairingId, `Imported "${safeName}" into Miro board successfully.`);
         setIsSyncingParent(false);
       } catch (metaErr: unknown) {
         const metaMsg = metaErr instanceof Error ? metaErr.message : String(metaErr);

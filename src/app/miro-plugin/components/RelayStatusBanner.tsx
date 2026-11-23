@@ -85,22 +85,9 @@ export function RelayStatusBanner({
     retryReadyAt === null ? 0 : Math.max(0, Math.ceil((retryReadyAt - now) / 1000));
   const isCoolingDown = remainingSeconds > 0;
 
-  // Desktop tier active: local transport is unmetered and the cloud slot
-  // was released back to the pool.
-  if (useTauri && figmaConnected) {
-    return (
-      <div className="rounded-md border border-cyan-500/40 px-2.5 py-2 flex flex-col gap-1.5">
-        <div className="flex items-center gap-2">
-          <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-cyan-400" />
-          <span className="text-[9px] font-mono text-text-muted flex-1 leading-tight">
-            Local Transport — 0/{status?.maxSessions ?? 40} slots used
-          </span>
-        </div>
-        <p className="text-[8px] font-mono text-text-muted/60 leading-tight">
-          Direct localhost stream — 0 cloud slots consumed.
-        </p>
-      </div>
-    );
+  // Desktop bridge active: 100% zero-cloud local transport, hide community relay notice
+  if (useTauri) {
+    return null;
   }
 
   // 1-board-per-user conflict: this board is not the active session.

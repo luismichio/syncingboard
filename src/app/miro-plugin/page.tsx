@@ -14,6 +14,7 @@ import { ImportTab } from './components/ImportTab';
 import { SettingsTab } from './components/SettingsTab';
 import { VersionStamp } from '@/components/VersionStamp';
 import { GroupedSyncedImage, ImportPlatform, MiroPluginTab } from './types';
+import { notifyTauriMiroConnect, probeTauriBridge } from '@/lib/sync/tauriBridgeClient';
 
 const MAX_SCALE = PLAN === 'community' ? 2 : 4;
 const AVAILABLE_SCALES = Array.from({ length: MAX_SCALE }, (_, i) => i + 1);
@@ -119,29 +120,48 @@ export default function MiroPluginPage() {
   }, []);
 
   useEffect(() => {
-    if (!useTauri) return;
+    const wantsTauri = typeof window !== 'undefined' && localStorage.getItem('syncingboard_use_tauri') === 'true';
+    if (!useTauri && !wantsTauri) return;
 
     const check = async () => {
-      try {
-        const res = await fetch('https://local.syncingboard.com:4401/health', {
-          method: 'GET',
-          signal: AbortSignal.timeout(3000),
-          targetAddressSpace: 'loopback',
-        } as unknown as RequestInit);
-        if (res.status !== 200) throw new Error('unreachable');
-        const payload = (await res.json()) as { figmaConnected?: boolean } | null;
-        setFigmaConnected(payload?.figmaConnected === true);
-      } catch {
+      if (localStorage.getItem('syncingboard_use_tauri') !== 'true') return;
+      const health = await probeTauriBridge(3000);
+      if (health && health.status === 'ok') {
+        if (!useTauri) {
+          setUseTauri(true);
+          void notifyTauriMiroConnect();
+        }
+        setFigmaConnected(health.figmaConnected === true);
+        releaseLocalRelaySession();
+      } else {
         setUseTauri(false);
         setFigmaConnected(false);
-        localStorage.setItem('syncingboard_use_tauri', 'false');
       }
     };
 
     void check();
-    const interval = setInterval(check, 30_000);
+    const interval = setInterval(check, 15_000);
     return () => clearInterval(interval);
   }, [useTauri]);
+
+  const handleToggleTauri = async () => {
+    if (useTauri) {
+      setUseTauri(false);
+      setFigmaConnected(false);
+      localStorage.setItem('syncingboard_use_tauri', 'false');
+    } else {
+      const health = await probeTauriBridge(2000);
+      if (health && health.status === 'ok') {
+        setUseTauri(true);
+        setFigmaConnected(health.figmaConnected === true);
+        localStorage.setItem('syncingboard_use_tauri', 'true');
+        releaseLocalRelaySession();
+        void notifyTauriMiroConnect();
+      } else {
+        alert('SyncingBridge desktop app is not running on 127.0.0.1:4401. Please launch SyncingBridge first.');
+      }
+    }
+  };
 
   // Relay identity (1 board per Miro user, v0.15.1): SHA-256 of
   // miro.currentUser.id — guests with OAuth are first-class users.
@@ -337,6 +357,7 @@ export default function MiroPluginPage() {
         tokensLoading={tokensLoading}
         figmaToken={figmaToken}
         miroToken={miroToken}
+        useTauri={useTauri}
       />
 
       <TabNav
@@ -418,6 +439,8 @@ export default function MiroPluginPage() {
               setCopiedPairing(false);
             }}
             useTauri={useTauri}
+            onToggleTauri={handleToggleTauri}
+            figmaConnected={figmaConnected}
             defaultPngScale={defaultPngScale}
             onDefaultPngScaleChange={handleDefaultPngScaleChange}
             availableScales={AVAILABLE_SCALES}

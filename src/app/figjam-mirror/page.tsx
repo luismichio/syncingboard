@@ -17,6 +17,8 @@ import {
   ImportPlatform,
   MiroPluginTab,
 } from '@/app/miro-plugin/types';
+import { releaseLocalRelaySession } from '@/lib/sync/companionRelayClient';
+import { notifyTauriMiroConnect, probeTauriBridge } from '@/lib/sync/tauriBridgeClient';
 
 const MAX_SCALE = PLAN === 'community' ? 2 : 4;
 const AVAILABLE_SCALES = Array.from({ length: MAX_SCALE }, (_, i) => i + 1);
@@ -57,6 +59,8 @@ export default function FigJamPluginPage() {
   const [defaultPngScale, setDefaultPngScale] = useState<number>(1);
   const [copiedPairing, setCopiedPairing] = useState(false);
   const [pairingId, setPairingId] = useState<string>('');
+  const [useTauri, setUseTauri] = useState<boolean>(false);
+  const [figmaConnected, setFigmaConnected] = useState<boolean>(false);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -66,10 +70,53 @@ export default function FigJamPluginPage() {
       const safe = Number.isFinite(parsed) && parsed >= 1 && parsed <= MAX_SCALE ? parsed : 1;
       setDefaultPngScale(safe);
       setImportScale(safe);
+      setUseTauri(localStorage.getItem('syncingboard_use_tauri') === 'true');
       setPairingId(getOrCreatePairingId());
     });
     return () => window.cancelAnimationFrame(raf);
   }, []);
+
+  useEffect(() => {
+    const wantsTauri = typeof window !== 'undefined' && localStorage.getItem('syncingboard_use_tauri') === 'true';
+    if (!useTauri && !wantsTauri) return;
+    const check = async () => {
+      if (localStorage.getItem('syncingboard_use_tauri') !== 'true') return;
+      const health = await probeTauriBridge(3000);
+      if (health && health.status === 'ok') {
+        if (!useTauri) {
+          setUseTauri(true);
+          void notifyTauriMiroConnect();
+        }
+        setFigmaConnected(health.figmaConnected === true);
+        releaseLocalRelaySession();
+      } else {
+        setUseTauri(false);
+        setFigmaConnected(false);
+      }
+    };
+    void check();
+    const interval = setInterval(check, 15_000);
+    return () => clearInterval(interval);
+  }, [useTauri]);
+
+  const handleToggleTauri = async () => {
+    if (useTauri) {
+      setUseTauri(false);
+      setFigmaConnected(false);
+      localStorage.setItem('syncingboard_use_tauri', 'false');
+    } else {
+      const health = await probeTauriBridge(2000);
+      if (health && health.status === 'ok') {
+        setUseTauri(true);
+        setFigmaConnected(health.figmaConnected === true);
+        localStorage.setItem('syncingboard_use_tauri', 'true');
+        releaseLocalRelaySession();
+        void notifyTauriMiroConnect();
+      } else {
+        alert('SyncingBridge desktop app is not running on 127.0.0.1:4401. Please launch SyncingBridge first.');
+      }
+    }
+  };
 
   const copyPairingId = (): void => {
     const text = pairingId;
@@ -117,7 +164,7 @@ export default function FigJamPluginPage() {
 
   return (
     <div className="flex flex-col min-h-screen p-5 bg-bg-page text-text-page font-sans selection:bg-accent selection:text-bg-page transition-colors duration-200">
-      <AppHeader tokensLoading={hook.tokensLoading} figmaToken={hook.figmaToken} miroToken={null} hideMiro />
+      <AppHeader tokensLoading={hook.tokensLoading} figmaToken={hook.figmaToken} miroToken={null} useTauri={useTauri} hideMiro />
       <TabNav activeTab={activeTab} selectedItemsCount={hook.selectedItems.length} onTabChange={setActiveTab} />
       <section className="flex-grow flex flex-col">
         {activeTab === 'sync' && (
@@ -191,7 +238,9 @@ export default function FigJamPluginPage() {
               setPairingId(rotatePairingId());
               setCopiedPairing(false);
             }}
-            useTauri={false}
+            useTauri={useTauri}
+            onToggleTauri={handleToggleTauri}
+            figmaConnected={figmaConnected}
             defaultPngScale={defaultPngScale}
             onDefaultPngScaleChange={handleDefaultPngScaleChange}
             availableScales={AVAILABLE_SCALES}

@@ -2,37 +2,16 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="stylesheet" href="/src/styles.css" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>SyncBridge</title>
-    <script>
-      function switchTab(platform) {
-        const tabFigma = document.getElementById("tab-figma");
-        const tabPenpot = document.getElementById("tab-penpot");
-        const guideFigma = document.getElementById("guide-figma");
-        const guidePenpot = document.getElementById("guide-penpot");
-
-        if (platform === 'figma') {
-          tabFigma.classList.add("active");
-          tabPenpot.classList.remove("active");
-          guideFigma.classList.add("active");
-          guidePenpot.classList.remove("active");
-        } else {
-          tabPenpot.classList.add("active");
-          tabFigma.classList.remove("active");
-          guidePenpot.classList.add("active");
-          guideFigma.classList.remove("active");
-        }
-      }
-    </script>
+    <title>SyncingBridge</title>
     <script type="module" src="/src/main.ts"></script>
   </head>
 
   <body>
     <main class="container">
-      <div class="header">
+      <header class="header">
         <div class="logo-container">
-          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="stroke-linecap:round;stroke-linejoin:round;">
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="stroke-linecap:round;stroke-linejoin:round;">
             <g id="bottom" stroke="currentColor" stroke-width="2">
                 <g transform="matrix(1.043878,0,0,0.993379,-0.572984,0.186018)">
                     <path d="M17.792,9.918L17.792,16.926C17.792,17.994 17.389,19.018 16.67,19.773C15.951,20.528 14.977,20.953 13.96,20.953C12.03,20.953 9.775,20.953 8.213,20.953C7.704,20.953 7.217,20.741 6.858,20.363C6.499,19.985 6.297,19.473 6.297,18.939C6.297,18.385 6.297,17.933 6.297,17.933" />
@@ -60,83 +39,136 @@
             </g>
           </svg>
         </div>
-        <h1>SyncBridge</h1>
-        <p class="subtitle">Desktop companion for SyncingBoard</p>
-        <span style="font-size:10px;font-family:var(--font-mono);color:var(--text-muted);opacity:0.6;">v0.17.2 Community</span>
-      </div>
+        <h1>SyncingBridge</h1>
+        <p class="subtitle">Zero-Cloud Local Broker for SyncingBoard</p>
+      </header>
 
-      <div class="status-card">
+      <!-- Status Card -->
+      <div class="card">
         <div class="status-row">
-          <span class="status-label">Bridge Status</span>
-          <div id="bridge-status-badge" class="status-badge active">
-            <span class="pulse-dot"></span>
-            <span id="bridge-status-text">STARTING</span>
+          <span class="status-title">Broker Status</span>
+          <div class="status-indicator">
+            <span id="bridge-dot" class="status-dot connected"></span>
+            <span id="bridge-text" class="status-state-text connected">Active</span>
           </div>
         </div>
         <div class="divider"></div>
         <div class="info-grid">
           <div class="info-item">
-            <span class="info-label">Secure Domain</span>
-            <span class="info-value font-mono">local.syncingboard.com</span>
+            <span class="info-label">Broker Protocol</span>
+            <span class="info-value font-mono text-accent">WebSocket (ws://)</span>
           </div>
           <div class="info-item">
-            <span class="info-label">Port</span>
-            <span class="info-value font-mono">4401</span>
+            <span class="info-label">Local Port</span>
+            <span id="label-port" class="info-value font-mono">4401</span>
           </div>
           <div class="info-item">
-            <span class="info-label">Active Sessions</span>
-            <span id="active-sessions" class="info-value text-accent font-mono">0</span>
+            <span class="info-label">Sources (Figma/Penpot)</span>
+            <span id="sources-count" class="info-value font-mono text-accent">0</span>
           </div>
           <div class="info-item">
-            <span class="info-label">Figma Relay</span>
-            <span class="info-value text-accent font-mono">localhost:3845</span>
+            <span class="info-label">Targets (Miro/FigJam)</span>
+            <span id="targets-count" class="info-value font-mono text-accent">0</span>
           </div>
         </div>
       </div>
 
-      <div class="activity-card">
-        <div class="activity-header">
-          <span class="info-label">Activity Log</span>
-          <button onclick="document.getElementById('activity-log').innerHTML = ''" class="btn-clear">CLEAR</button>
-        </div>
-        <div id="activity-log" class="activity-log"></div>
-      </div>
+      <!-- Main Navigation Tabs -->
+      <nav class="main-tabs">
+        <button id="nav-tab-activity" class="nav-tab active" data-tab="activity">Activity Log</button>
+        <button id="nav-tab-guide" class="nav-tab" data-tab="guide">How to Sync</button>
+        <button id="nav-tab-settings" class="nav-tab" data-tab="settings">Settings</button>
+      </nav>
 
-      <div class="guide-card">
-        <div class="guide-header">
-          <h3>How to Sync</h3>
-          <div class="tab-buttons">
-            <button id="tab-figma" class="tab-btn active" onclick="switchTab('figma')">Figma</button>
-            <button id="tab-penpot" class="tab-btn" onclick="switchTab('penpot')">Penpot</button>
+      <!-- Content Views Wrapper -->
+      <div class="tab-content-container">
+        <!-- Tab 1: Activity Log -->
+        <section id="view-activity" class="tab-view active">
+          <div class="section-label">Activity Log</div>
+          <div class="card">
+            <div id="activity-log" class="log-box">Initialized. Ready to pair.</div>
           </div>
-        </div>
-        
-        <div id="guide-figma" class="guide-content active">
-          <ol class="guide-list">
-            <li>Connect your <strong>Figma account</strong> inside the Miro Settings.</li>
-            <li>Open <strong>Figma Desktop</strong> and ensure the <strong>local Figma MCP server</strong> is running on port 3845 (required for auto-detect selection).</li>
-            <li>Select any frame in Figma and click <strong>Detect Selection</strong> in Miro.</li>
-          </ol>
-        </div>
-        
-        <div id="guide-penpot" class="guide-content">
-          <ol class="guide-list">
-            <li>Connect <strong>SyncBridge</strong> inside the Miro Settings tab.</li>
-            <li>Copy your unique <strong>Pairing ID</strong> to the clipboard.</li>
-            <li>Open the <strong>SyncingBoard Companion</strong> plugin in your Penpot workspace.</li>
-            <li>Paste the <strong>Pairing ID</strong> and click <strong>Connect</strong> to link them.</li>
-          </ol>
-        </div>
+        </section>
+
+        <!-- Tab 2: How to Sync -->
+        <section id="view-guide" class="tab-view">
+          <div class="card">
+            <div class="platform-tabs">
+              <button id="subtab-figma" class="platform-tab active" data-subtab="figma" type="button">FIGMA</button>
+              <button id="subtab-penpot" class="platform-tab" data-subtab="penpot" type="button">PENPOT</button>
+            </div>
+            
+            <div id="guide-figma" class="guide-content active">
+              <ol class="guide-list">
+                <li>Open <strong>Figma Desktop</strong> and launch the <strong>SyncingBoard Companion</strong> plugin.</li>
+                <li>In Miro, open <strong>Settings</strong> and click <strong>COPY ID</strong> next to your Pairing ID.</li>
+                <li>Paste the <strong>Pairing ID</strong> into the Figma Companion and click <strong>CONNECT</strong>.</li>
+                <li>The Companion status will switch to <strong>CONNECTED (LOCAL BRIDGE)</strong>.</li>
+                <li>Select any frame in Figma and click <strong>Detect Selection</strong> in Miro to link and sync with zero cloud latency.</li>
+              </ol>
+            </div>
+            
+            <div id="guide-penpot" class="guide-content">
+              <ol class="guide-list">
+                <li>Open <strong>Penpot</strong> in your browser and run the <strong>SyncingBoard Companion</strong> plugin.</li>
+                <li>Copy your <strong>Pairing ID</strong> from Miro Settings and paste it into the Penpot Companion.</li>
+                <li>Click <strong>CONNECT</strong> to link over SyncingBridge.</li>
+                <li>Select any artboard and click <strong>Detect Selection</strong> or <strong>Import</strong> in Miro.</li>
+              </ol>
+            </div>
+          </div>
+        </section>
+
+        <!-- Tab 3: Settings -->
+        <section id="view-settings" class="tab-view">
+          <div class="card">
+            <div class="settings-row">
+              <div>
+                <div class="settings-title">Local Broker Connection</div>
+                <div class="settings-desc">Allow local plugins to connect via loopback</div>
+              </div>
+              <label class="toggle-switch">
+                <input type="checkbox" id="toggle-broker-enabled" checked />
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+
+            <div class="divider"></div>
+
+            <div class="settings-row">
+              <div>
+                <div class="settings-title">Broker Port</div>
+                <div class="settings-desc">TCP port for local WebSocket listener (default: 4401)</div>
+              </div>
+              <input type="number" id="input-broker-port" min="1024" max="65535" value="4401" class="port-input" />
+            </div>
+
+            <div class="divider"></div>
+
+            <div class="settings-row">
+              <div>
+                <div class="settings-title">Flush Log Memory</div>
+                <div class="settings-desc">Clear local memory-resident packet logs</div>
+              </div>
+              <button id="btn-settings-clear-logs" class="btn-clear" type="button">CLEAR LOGS</button>
+            </div>
+          </div>
+        </section>
       </div>
 
-      <div class="actions-row">
-        <a href="https://www.syncingboard.com" target="_blank" class="btn-primary">
-          DOCUMENTATION
-        </a>
-        <a href="https://github.com/luismichio/syncingboard" target="_blank" class="btn-secondary">
-          GITHUB
-        </a>
-      </div>
+      <!-- Sticky Bottom Footer -->
+      <footer class="app-sticky-footer">
+        <div class="docs-container">
+          <a href="https://www.syncingboard.com/docs" target="_blank" rel="noopener noreferrer" class="docs-link">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
+              <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+            </svg>
+            Documentation
+          </a>
+        </div>
+        <div class="version-badge">v0.17.2 Community</div>
+      </footer>
     </main>
   </body>
 </html>

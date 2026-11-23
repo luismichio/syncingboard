@@ -1,7 +1,9 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 
-console.log("🚀 Starting SyncingBoard local server & Cloudflare Tunnel...\n");
+const withTauri = process.argv.includes("--tauri") || process.argv.includes("tauri") || process.argv.includes("--with-tauri");
+
+console.log(`🚀 Starting SyncingBoard local server & Cloudflare Tunnel${withTauri ? " (+ Tauri SyncBridge)" : ""}...\n`);
 
 // 1. Find cloudflared executable
 let cloudflaredBin = "cloudflared";
@@ -30,14 +32,29 @@ const tunnelProcess = spawn(`"${cloudflaredBin}"`, ["tunnel", "run", "syncingboa
   shell: true,
 });
 
+// 4. Optionally spawn Tauri dev server
+let tauriProcess = null;
+if (withTauri) {
+  console.log("⚡ Launching Tauri SyncBridge desktop app...\n");
+  tauriProcess = spawn("yarn", ["--cwd", "tauri-bridge", "tauri", "dev"], {
+    stdio: "inherit",
+    shell: true,
+  });
+}
+
 function cleanup() {
-  console.log("\n🧹 Shutting down local server and tunnel...");
+  console.log("\n🧹 Shutting down local server, tunnel, and Tauri...");
   try {
     devProcess.kill("SIGTERM");
   } catch (e) {}
   try {
     tunnelProcess.kill("SIGTERM");
   } catch (e) {}
+  if (tauriProcess) {
+    try {
+      tauriProcess.kill("SIGTERM");
+    } catch (e) {}
+  }
   process.exit(0);
 }
 

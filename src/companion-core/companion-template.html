@@ -80,6 +80,33 @@
       color: var(--text-muted);
       margin-top: 3px;
     }
+    .header-transport {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: default;
+      opacity: 0.85;
+      transition: opacity 0.15s ease, color 0.15s ease;
+      color: var(--text-muted);
+    }
+    .header-transport:hover {
+      opacity: 1;
+    }
+    .header-transport.local {
+      color: var(--success, #22c55e);
+    }
+    .header-transport.cloud {
+      color: var(--accent);
+    }
+    .header-transport.disconnected {
+      color: var(--text-muted);
+      opacity: 0.45;
+    }
+    .header-transport.connecting {
+      color: #eab308;
+      animation: pulse 1.5s infinite;
+    }
 
     /* Tab Navigation (Target Parity: TabNav.tsx) */
     .tab-bar {
@@ -296,6 +323,48 @@
       color: var(--accent);
     }
 
+    /* Toggle Switch */
+    .toggle-switch {
+      position: relative;
+      display: inline-block;
+      width: 30px;
+      height: 16px;
+      flex-shrink: 0;
+    }
+    .toggle-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    .toggle-slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: var(--border-card);
+      transition: 0.2s;
+      border-radius: 16px;
+    }
+    .toggle-slider:before {
+      position: absolute;
+      content: "";
+      height: 10px;
+      width: 10px;
+      left: 3px;
+      bottom: 3px;
+      background-color: white;
+      transition: 0.2s;
+      border-radius: 50%;
+    }
+    input:checked + .toggle-slider {
+      background-color: var(--accent);
+    }
+    input:checked + .toggle-slider:before {
+      transform: translateX(14px);
+    }
+
     /* Target Theme Toggle Button (ThemeToggle.tsx Parity) */
     .theme-toggle-btn {
       padding: 4px 8px;
@@ -374,6 +443,20 @@
         <h2>SyncingBoard</h2>
         <div class="subtitle"><!-- TITLE --></div>
       </div>
+      <div id="header-transport-indicator" class="header-transport disconnected" title="Relay: Disconnected">
+        <!-- Local Bridge: Lucide Radio / Signal Icon -->
+        <svg id="transport-icon-local" style="display: none;" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="Local Bridge Active">
+          <path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/>
+          <path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/>
+          <circle cx="12" cy="12" r="2"/>
+          <path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/>
+          <path d="M19.1 4.9C23 8.8 23 15.1 19.1 19"/>
+        </svg>
+        <!-- Cloud Relay: Lucide Cloud Icon -->
+        <svg id="transport-icon-cloud" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="Cloud Relay">
+          <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/>
+        </svg>
+      </div>
     </header>
 
     <!-- Tab Bar -->
@@ -409,32 +492,6 @@
         </div>
       </div>
 
-      <!-- Connection Status Card (Target Parity: no outline/box around status text) -->
-      <div class="section-label">Connection Status</div>
-      <div class="card">
-        <div class="status-row">
-          <div class="status-left">
-            <span class="status-title">Cloud Relay (Ably)</span>
-            <span class="status-desc">WebSocket channel for Miro sync</span>
-          </div>
-          <div class="status-indicator">
-            <span id="status-dot" class="status-dot"></span>
-            <span id="status-text" class="status-state-text">Disconnected</span>
-          </div>
-        </div>
-        <div style="border-top: 1px solid var(--border-card); margin: 2px 0;"></div>
-        <div class="status-row">
-          <div class="status-left">
-            <span class="status-title">Plugin Bridge (Local)</span>
-            <span class="status-desc">Host sandbox document access</span>
-          </div>
-          <div class="status-indicator">
-            <span id="plugin-dot" class="status-dot"></span>
-            <span id="plugin-text" class="status-state-text">Unknown</span>
-          </div>
-        </div>
-      </div>
-
       <!-- Live Selection Node Card (Target Parity: text-xs name and text-[9px] font-mono ID) -->
       <div class="section-label">Active Selection</div>
       <div class="card">
@@ -458,12 +515,69 @@
           </div>
         </div>
       </div>
+
+      <!-- Activity Log (Tab 1) -->
+      <div class="section-label" style="display: flex; justify-content: space-between; align-items: center;">
+        <span>Activity Log</span>
+        <button id="clear-log-btn" class="btn-clear" type="button" style="font-size: 8px; padding: 1px 5px;">CLEAR</button>
+      </div>
+      <div class="card">
+        <div id="log" class="log-box">Initialized. Ready to pair.</div>
+      </div>
     </div>
 
     <!-- TAB 2: SETTINGS VIEW -->
     <div id="view-settings" class="tab-content">
-      <!-- Integrations -->
+      <!-- Integrations (Merged with Connection Status) -->
       <div class="section-label">Integrations</div>
+      <div class="card">
+        <div class="status-row">
+          <div class="status-left">
+            <span id="relay-title" class="status-title">Relay Connection</span>
+            <span id="relay-desc" class="status-desc">WebSocket channel for Miro sync</span>
+          </div>
+          <div class="status-indicator">
+            <span id="status-dot" class="status-dot"></span>
+            <span id="status-text" class="status-state-text">Disconnected</span>
+          </div>
+        </div>
+        <div style="border-top: 1px solid var(--border-card); margin: 2px 0;"></div>
+        <div class="status-row">
+          <div class="status-left">
+            <span class="status-title">SyncingBridge (Local)</span>
+            <span id="bridge-desc" class="status-desc">Auto-connect to local desktop bridge</span>
+          </div>
+          <div class="status-indicator">
+            <span id="bridge-dot" class="status-dot"></span>
+            <label class="toggle-switch">
+              <input type="checkbox" id="toggle-bridge-auto-connect" />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+        </div>
+        <div style="border-top: 1px solid var(--border-card); margin: 2px 0;"></div>
+        <div class="status-row">
+          <div class="status-left">
+            <span class="status-title">Broker Port</span>
+            <span class="status-desc">Local loopback WebSocket port</span>
+          </div>
+          <input type="number" id="companion-bridge-port" min="1024" max="65535" value="4401" style="width: 58px; font-family: monospace; font-size: 10px; font-weight: 600; color: var(--accent); background: var(--bg-page); border: 1px solid var(--border-card); border-radius: 4px; padding: 2px 4px; text-align: right;" />
+        </div>
+        <div style="border-top: 1px solid var(--border-card); margin: 2px 0;"></div>
+        <div class="status-row">
+          <div class="status-left">
+            <span class="status-title">Plugin Bridge (Local)</span>
+            <span class="status-desc">Host sandbox document access</span>
+          </div>
+          <div class="status-indicator">
+            <span id="plugin-dot" class="status-dot"></span>
+            <span id="plugin-text" class="status-state-text">Unknown</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pairing ID Card -->
+      <div class="section-label">Pairing ID</div>
       <div class="card">
         <div class="status-row">
           <span class="status-title">Pairing ID</span>
@@ -495,12 +609,6 @@
             <span id="theme-label">System</span>
           </button>
         </div>
-      </div>
-
-      <!-- Activity Log -->
-      <div class="section-label">Activity Log</div>
-      <div class="card">
-        <div id="log" class="log-box">Initialized. Ready to pair.</div>
       </div>
 
       <!-- Documentation Link (Target Parity: SettingsTab.tsx) -->

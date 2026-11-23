@@ -1,3 +1,27 @@
+# Task: Tauri Desktop Bridge — Native WebSocket Broker (`ws://127.0.0.1:4401`)
+
+## Phase 1: Native Rust WebSocket Server (`tauri-bridge/src-tauri/`)
+- [x] Replace self-signed HTTPS server with Axum/Tokio WebSocket listener on `127.0.0.1:4401`.
+- [x] Implement bidirectional relay channels (`/source` and `/target`) for frame selection and image buffers.
+- [x] Implement local companion WebSocket relay handler for Figma & Penpot in Rust.
+- [x] Update Tauri tray app UI to display live connection status (Figma, Miro, Penpot) and broker controls.
+
+## Phase 2: Client-Side Local Transport Adapter (`src/lib/sync/`)
+- [x] Add probe logic in `tauriBridgeClient.ts` and `companionRelayClient.ts` to test `ws://127.0.0.1:4401`.
+- [x] Route selection broadcasting and image export commands to local WebSocket if active.
+- [x] Implement seamless fallback to Ably Cloud Relay if Tauri app is not running.
+
+## Phase 3: Binary Buffer Transfer & Quota Optimization
+- [x] Server-side binary frame relay handler in Rust (`Message::Binary` -> `binary-chunk`); client-side binary chunking deferred (exports currently stream over JSON text frames).
+- [x] Add release-hook (`releaseLocalRelaySession`) to release cloud slot lease when `useTauri === true`.
+
+## Phase 4: Unit Testing, Hardening & Verification
+- [x] Unit tests for local WebSocket protocol, auto-fallback state machine, and port/timeout SSRF validation (`tauriBridgeClient.test.ts`, `bridgeValidation.test.ts`).
+- [x] Hardening: strict port/timeout validation in `/api/bridge/*`, Rust CORS/PNA origin allowlist, immediate WS disconnect on pause, self-echo suppression, empty-channel pruning, and `SettingsTab` SSR hydration fix.
+- [x] Verify `yarn test`, `cargo test`, `yarn build`, and `tauri-bridge` `yarn build`.
+
+---
+
 # Task: Deselect Items from Sync List (Local Selection Exclusion)
 
 ## Phase 1: Hook State & Filtering

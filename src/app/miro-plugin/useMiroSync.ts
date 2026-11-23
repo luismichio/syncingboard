@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { SyncedImage } from './useMiroSelection';
-import { callPenpotMcpTool } from '@/lib/sync/companionRelayClient';
+import { callPenpotMcpTool, broadcastSyncActivity } from '@/lib/sync/companionRelayClient';
 import { getValidToken } from '@/lib/tokens';
 import { trackEvent } from '@/lib/analytics';
 import { decodeHtmlEntities } from '@/lib/decodeHtmlEntities';
@@ -91,6 +91,8 @@ return;
 
     trackEvent('sync_start', `items:${selectedItems.length}`);
     setIsSyncing(true);
+    const pairingId = typeof window !== 'undefined' ? localStorage.getItem('syncingboard_pairing_id') || '' : '';
+    void broadcastSyncActivity(pairingId, `Sync started: updating ${selectedItems.length} screen(s) on Miro board...`);
     try {
       setSyncStatus('Preparing items for sync...', 'progress');
       let boardId: string;
@@ -464,6 +466,7 @@ throw new Error(communityMessage);
       } else {
         setSyncStatus(`✓ Updated ${updatedCount} ${label} successfully!`);
       }
+      void broadcastSyncActivity(pairingId, `Sync completed: updated ${updatedCount} screen(s) on Miro board.`);
 
       try {
         const syncChannel = new BroadcastChannel('figma_miro_sync');
