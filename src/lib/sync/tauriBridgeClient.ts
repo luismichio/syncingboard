@@ -53,6 +53,49 @@ export async function notifyTauriMiroConnect(): Promise<void> {
   }
 }
 
+export interface LocalMiroUpdatePayload {
+  boardId: string;
+  itemId: string;
+  fileKey: string;
+  nodeId: string;
+  nodeName: string;
+  width?: number;
+  dataUrl: string;
+  format?: 'png' | 'svg';
+  scale?: number;
+  preserveSize?: boolean;
+}
+
+/**
+ * Uploads an updated image directly to Miro REST API v2 via the local Tauri SyncingBridge
+ * (0 Vercel calls, 50 MB body limit). Returns null if the local bridge is unreachable so the
+ * caller can cleanly fall back to /api/miro/update-image.
+ */
+export async function updateMiroImageViaTauri(
+  payload: LocalMiroUpdatePayload,
+  miroToken: string
+): Promise<Response | null> {
+  if (typeof window === 'undefined') return null;
+  const port = getConfiguredBridgePort();
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/miro/update-image`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${miroToken}`,
+      },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(30_000),
+      cache: 'no-store',
+    });
+    // 503 means local broker is paused -> fall back to cloud route
+    if (res.status === 503) return null;
+    return res;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Probes whether the local SyncingBridge broker is actively listening on port 4401 (or configured port).
  * 1. Checks relative /api/bridge/health (seamless within Miro iframe/Next.js backend)

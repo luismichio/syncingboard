@@ -8,6 +8,7 @@ interface RelayRequestBody {
   port?: number | string;
   platform?: 'figma' | 'penpot';
   action: 'select' | 'export';
+  fileKey?: string;
   shapeId?: string;
   format?: 'svg' | 'png';
   scale?: number;
@@ -86,6 +87,7 @@ export async function POST(request: NextRequest) {
           payload: {
             id: reqId,
             action: body.action,
+            fileKey: body.fileKey,
             format: body.format,
             scale: body.scale,
             shapeId: body.shapeId,

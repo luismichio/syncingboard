@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { SyncedImage } from './useMiroSelection';
-import { callPenpotMcpTool, broadcastSyncActivity } from '@/lib/sync/companionRelayClient';
+import { callPenpotMcpTool, broadcastSyncActivity, exportFigmaNodeLocally } from '@/lib/sync/companionRelayClient';
+import { updateMiroImageViaTauri } from '@/lib/sync/tauriBridgeClient';
+import { evaluateBatchLimits } from '@/lib/sync/batchLimits';
 import { getValidToken } from '@/lib/tokens';
 import { trackEvent } from '@/lib/analytics';
 import { decodeHtmlEntities } from '@/lib/decodeHtmlEntities';
@@ -222,17 +224,23 @@ return;
         return;
       }
 
-      // Enforce batch limit of 3 unique images (different fileKey + nodeId).
+      // Enforce hybrid batch limits (Cloud: 3 total; Local Tauri: 50 Figma + 3 Penpot).
       // Copies at different scales of the same image are NOT counted separately.
-      // The UI already blocks the sync button when >3 groups are selected, so this
-      // is a defensive check — silently truncating would hide bugs.
-      const MAX_BATCH_SIZE = 3;
-      const uniqueImages = new Set(itemsToSync.map(i => `${i.fileKey}|${i.nodeId}`));
-      if (uniqueImages.size > MAX_BATCH_SIZE) {
-        throw new Error(`Can only sync up to ${MAX_BATCH_SIZE} different images at once. Deselect some to continue.`);
+      const isTauriMode =
+        typeof window !== 'undefined' && localStorage.getItem('syncingboard_use_tauri') === 'true';
+      const uniqueGroupMap = new Map<string, { platform: 'figma' | 'penpot' }>();
+      for (const item of itemsToSync) {
+        const key = `${item.fileKey}|${item.nodeId}`;
+        if (!uniqueGroupMap.has(key)) {
+          uniqueGroupMap.set(key, { platform: item.platform === 'penpot' ? 'penpot' : 'figma' });
+        }
       }
-      if (itemsToSync.length > MAX_BATCH_SIZE) {
-        setSyncStatus(`Syncing ${itemsToSync.length} widget(s) across ${uniqueImages.size} image(s)`);
+      const batchCheck = evaluateBatchLimits([...uniqueGroupMap.values()], isTauriMode);
+      if (batchCheck.blocked) {
+        throw new Error(batchCheck.reason || 'Batch limit exceeded. Deselect some items to continue.');
+      }
+      if (itemsToSync.length > 3) {
+        setSyncStatus(`Syncing ${itemsToSync.length} widget(s) across ${uniqueGroupMap.size} image(s)`);
       }
 
       // renderCache: "fileKey|nodeId|format" -> base64 data URL
@@ -244,12 +252,8 @@ return;
       const figmaTargets = itemsToSync.filter(t => t.platform !== 'penpot');
       const penpotTargets = itemsToSync.filter(t => t.platform === 'penpot');
 
-      // --- Figma Batch Rendering ---
+      // --- Figma Rendering (Local Companion exportAsync() first when Tauri is active, cloud fallback) ---
       if (figmaTargets.length > 0) {
-        if (!figmaToken) {
-          throw new Error('Figma token missing. Please connect Figma to sync Figma frames.');
-        }
-
         // Group unique nodes by fileKey, format, and scale
         const groups = new Map<string, Set<string>>();
         for (const item of figmaTargets) {
@@ -262,25 +266,66 @@ return;
           groups.get(groupKey)!.add(item.nodeId);
         }
 
-        const totalGroups = groups.size;
-        let groupIndex = 0;
+        // Fast path: when Tauri is active, export open-file Figma frames locally via node.exportAsync()
+        const cloudFallbackGroups = new Map<string, string[]>();
+        if (isTauriMode && pairingId) {
+          for (const [groupKey, nodeIdSet] of groups) {
+            const [fileKey, format, scaleStr] = groupKey.split('|');
+            const scale = Number(scaleStr);
+            const fallbackIds: string[] = [];
 
-        for (const [groupKey, nodeIdSet] of groups) {
-          groupIndex++;
-          const [fileKey, format, scaleStr] = groupKey.split('|');
-          const scale = Number(scaleStr);
-          const nodeIds = [...nodeIdSet];
+            for (const nodeId of nodeIdSet) {
+              setSyncStatus(`Exporting Figma frame locally (${nodeId})...`);
+              const localExport = await exportFigmaNodeLocally(pairingId, {
+                fileKey,
+                nodeId,
+                format: format === 'svg' ? 'svg' : 'png',
+                scale,
+              });
+              if (localExport?.dataUrl) {
+                renderCache.set(`${fileKey}|${nodeId}|${format}|${scale}`, localExport.dataUrl);
+                if (localExport.name) {
+                  nameCache.set(`${fileKey}|${nodeId}`, localExport.name);
+                }
+              } else {
+                fallbackIds.push(nodeId);
+              }
+            }
 
-          setSyncStatus(`Fetching Figma group ${groupIndex}/${totalGroups}: ${nodeIds.length} frame(s)...`);
+            if (fallbackIds.length > 0) {
+              cloudFallbackGroups.set(groupKey, fallbackIds);
+            }
+          }
+        } else {
+          for (const [groupKey, nodeIdSet] of groups) {
+            cloudFallbackGroups.set(groupKey, [...nodeIdSet]);
+          }
+        }
 
-          const batchRes = await fetch('/api/figma/render-batch', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${figmaToken}`,
-            },
-            body: JSON.stringify({ fileKey, nodeIds, format, scale }),
-          });
+        // Cloud fallback for closed Figma files or non-Tauri sessions
+        if (cloudFallbackGroups.size > 0) {
+          if (!figmaToken) {
+            throw new Error('Figma token missing. Please connect Figma to sync frames from closed files.');
+          }
+
+          const totalGroups = cloudFallbackGroups.size;
+          let groupIndex = 0;
+
+          for (const [groupKey, nodeIds] of cloudFallbackGroups) {
+            groupIndex++;
+            const [fileKey, format, scaleStr] = groupKey.split('|');
+            const scale = Number(scaleStr);
+
+            setSyncStatus(`Fetching Figma group ${groupIndex}/${totalGroups}: ${nodeIds.length} frame(s)...`);
+
+            const batchRes = await fetch('/api/figma/render-batch', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${figmaToken}`,
+              },
+              body: JSON.stringify({ fileKey, nodeIds, format, scale }),
+            });
 
           if (!batchRes.ok) {
             const errData = await batchRes.json().catch(() => ({})) as {
@@ -311,6 +356,7 @@ throw new Error(communityMessage);
             if (dataUrl) {
               renderCache.set(`${fileKey}|${nodeId}|${format}|${scale}`, dataUrl);
             }
+          }
           }
         }
       }
@@ -391,27 +437,38 @@ throw new Error(communityMessage);
         const liveName = nameCache.get(`${item.fileKey}|${item.nodeId}`) || item.nodeName;
         setSyncStatus(`Updating canvas widget ${i + 1}/${itemsToSync.length}: ${liveName}`);
 
-        const response = await fetch('/api/miro/update-image', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${freshMiroToken}`,
-            ...(figmaToken ? { 'X-Figma-Token': figmaToken } : {}),
-          },
-          body: JSON.stringify({
-            boardId,
-            itemId: item.id,
-            fileKey: item.fileKey,
-            nodeId: item.nodeId,
-            nodeName: liveName,
-            width: item.width,
-            dataUrl,
-            format: item.format || (item.platform === 'penpot' ? 'svg' : 'png'),
-            scale: item.scale || 2,
-            platform: item.platform || 'figma',
-            preserveSize,
-          }),
-        });
+        const miroUpdatePayload = {
+          boardId,
+          itemId: item.id,
+          fileKey: item.fileKey,
+          nodeId: item.nodeId,
+          nodeName: liveName,
+          width: item.width,
+          dataUrl,
+          format: (item.format || (item.platform === 'penpot' ? 'svg' : 'png')) as 'png' | 'svg',
+          scale: item.scale || 2,
+          preserveSize,
+        };
+
+        // Fast path: when Tauri SyncingBridge is active, PATCH Miro REST API v2 directly from Rust (0 Vercel calls)
+        let response: Response | null = null;
+        if (isTauriMode) {
+          response = await updateMiroImageViaTauri(miroUpdatePayload, freshMiroToken);
+        }
+        if (!response) {
+          response = await fetch('/api/miro/update-image', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${freshMiroToken}`,
+              ...(figmaToken ? { 'X-Figma-Token': figmaToken } : {}),
+            },
+            body: JSON.stringify({
+              ...miroUpdatePayload,
+              platform: item.platform || 'figma',
+            }),
+          });
+        }
 
         if (!response.ok) {
           const errData = await response.json().catch(() => ({})) as {

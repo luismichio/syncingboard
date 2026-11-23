@@ -771,6 +771,72 @@ figma.ui.onmessage = async (msg) => {
     return;
   }
 
+  if (msg.action === 'export-shape') {
+    if (EDITOR_TYPE !== 'figma') {
+      figma.ui.postMessage({
+        action: 'export-result',
+        requestId: msg.requestId,
+        data: null,
+        error: 'NODE_NOT_IN_OPEN_FILE',
+      });
+      return;
+    }
+    try {
+      const openFileKey = resolveFileKey();
+      if (msg.fileKey && openFileKey && openFileKey !== 'unknown' && msg.fileKey !== openFileKey) {
+        figma.ui.postMessage({
+          action: 'export-result',
+          requestId: msg.requestId,
+          data: null,
+          error: 'NODE_NOT_IN_OPEN_FILE',
+        });
+        return;
+      }
+
+      const node = await figma.getNodeByIdAsync(msg.shapeId);
+      if (!node || typeof node.exportAsync !== 'function') {
+        figma.ui.postMessage({
+          action: 'export-result',
+          requestId: msg.requestId,
+          data: null,
+          error: 'NODE_NOT_IN_OPEN_FILE',
+        });
+        return;
+      }
+
+      const fmt = msg.format === 'svg' ? 'SVG' : 'PNG';
+      const scaleVal = typeof msg.scale === 'number' && msg.scale > 0 ? msg.scale : 2;
+      const exportSettings =
+        fmt === 'SVG'
+          ? { format: 'SVG' }
+          : { format: 'PNG', constraint: { type: 'SCALE', value: scaleVal } };
+
+      const bytes = await node.exportAsync(exportSettings);
+      const base64 = figma.base64Encode(bytes);
+      const mime = fmt === 'SVG' ? 'image/svg+xml' : 'image/png';
+      const dataUrl = `data:${mime};base64,${base64}`;
+
+      figma.ui.postMessage({
+        action: 'export-result',
+        requestId: msg.requestId,
+        data: {
+          dataUrl,
+          name: node.name || '',
+          width: typeof node.width === 'number' ? node.width : undefined,
+          height: typeof node.height === 'number' ? node.height : undefined,
+        },
+      });
+    } catch (err) {
+      figma.ui.postMessage({
+        action: 'export-result',
+        requestId: msg.requestId,
+        data: null,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    return;
+  }
+
   if (msg.action === 'get-selection') {
     if (EDITOR_TYPE !== 'figma') {
       // FigJam is the destination: its own selection is not a source. The

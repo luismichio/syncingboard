@@ -20,6 +20,7 @@ export interface RelayRequestBody {
   pairingId: string;
   platform?: 'figma' | 'penpot';
   action: 'select' | 'export';
+  fileKey?: string;
   shapeId?: string;
   format?: 'svg' | 'png';
   scale?: number;
@@ -520,6 +521,7 @@ async function callLocalTauriRelay(body: RelayRequestBody): Promise<RelayJson> {
         payload: {
           id: reqId,
           action: body.action,
+          fileKey: body.fileKey,
           format: body.format,
           scale: body.scale,
           shapeId: body.shapeId,
@@ -559,6 +561,54 @@ async function callLocalTauriRelay(body: RelayRequestBody): Promise<RelayJson> {
       }
     };
   });
+}
+
+export interface LocalFigmaExportResult {
+  dataUrl: string;
+  name?: string;
+  width?: number;
+  height?: number;
+}
+
+/**
+ * Exports a Figma node locally via the Figma Companion plugin's `node.exportAsync()`
+ * over the Tauri SyncingBridge (0 Figma REST API calls, 0 Ably, 0 Vercel).
+ * Returns null if Tauri is disabled, unreachable, or the node is not in the currently open Figma file.
+ */
+export async function exportFigmaNodeLocally(
+  pairingId: string,
+  opts: { fileKey?: string; nodeId: string; format: 'png' | 'svg'; scale: number }
+): Promise<LocalFigmaExportResult | null> {
+  if (typeof window === 'undefined' || !pairingId) return null;
+  if (localStorage.getItem('syncingboard_use_tauri') !== 'true') return null;
+
+  try {
+    const res = await callLocalTauriRelay({
+      pairingId,
+      platform: 'figma',
+      action: 'export',
+      fileKey: opts.fileKey,
+      shapeId: opts.nodeId,
+      format: opts.format,
+      scale: opts.scale,
+      timeoutMs: 15_000,
+    });
+    if (res && typeof res === 'object' && !Array.isArray(res)) {
+      const obj = res as Record<string, unknown>;
+      if (typeof obj.dataUrl === 'string' && obj.dataUrl.startsWith('data:')) {
+        return {
+          dataUrl: obj.dataUrl,
+          name: typeof obj.name === 'string' ? obj.name : undefined,
+          width: typeof obj.width === 'number' ? obj.width : undefined,
+          height: typeof obj.height === 'number' ? obj.height : undefined,
+        };
+      }
+    }
+    return null;
+  } catch {
+    // Node not in open file, companion offline, or bridge unreachable -> caller falls back to Figma REST API
+    return null;
+  }
 }
 
 export async function callRelay(body: RelayRequestBody): Promise<RelayJson> {

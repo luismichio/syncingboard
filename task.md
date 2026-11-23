@@ -1,3 +1,11 @@
+# Task: Zero-Cloud Local Figma ↔ Miro Pipeline (Parts A & B)
+- [x] Phase 1 (Part A): Local `POST /miro/update-image` in `tauri-bridge/src-tauri/src/lib.rs` (50 MB limit, `reqwest` multipart, `preserveSize` geometry restore + `Retry-After`, Rust unit tests).
+- [x] Phase 2 (Part A): `updateMiroImageViaTauri` in `tauriBridgeClient.ts`, hybrid split batch limits (`src/lib/sync/batchLimits.ts` + tests: 50 local Figma / 3 Penpot / 3 Cloud), wired into `SyncTab.tsx`, `useMiroSync.ts`, `useFigmaImporter.ts`.
+- [x] Phase 3 (Part B): Local `node.exportAsync()` handler in `figma-plugin/code.js` + `runtime.ts` + `exportFigmaNodeLocally()` in `companionRelayClient.ts` with automatic fallback to `/api/figma/render-batch` for closed files.
+- [x] Phase 4: Rebuilt companion bundles, updated `doc/CHANGELOG.md`, and verified `yarn test`, `yarn build`, `yarn lint`, and `cargo check --all-targets`.
+
+---
+
 # Task: Tauri Desktop Bridge — Native WebSocket Broker (`ws://127.0.0.1:4401`)
 
 ## Phase 1: Native Rust WebSocket Server (`tauri-bridge/src-tauri/`)

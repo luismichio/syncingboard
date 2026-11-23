@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { parseFigmaUrl } from '@/lib/sync/figmaUrlParser';
 import { decodeHtmlEntities } from '@/lib/decodeHtmlEntities';
 import { MiroAdapter } from './MiroAdapter';
-import { broadcastSyncActivity } from '@/lib/sync/companionRelayClient';
+import { broadcastSyncActivity, exportFigmaNodeLocally } from '@/lib/sync/companionRelayClient';
+import { updateMiroImageViaTauri } from '@/lib/sync/tauriBridgeClient';
 
 export interface FigmaNodeInfo {
   fileKey: string;
@@ -128,26 +129,45 @@ export function useFigmaImporter(
 
       setSyncStatusParent('Rendering Figma frame...', 'progress');
 
-      // Use the same render-batch endpoint as sync to guarantee identical image data handling
-      const batchRes = await fetch('/api/figma/render-batch', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${figmaToken}`,
-        },
-        body: JSON.stringify({
+      const isTauriMode =
+        typeof window !== 'undefined' && localStorage.getItem('syncingboard_use_tauri') === 'true';
+
+      // Fast path: export locally via Figma Companion's node.exportAsync() over Tauri WS (0 Figma REST API calls)
+      let dataUrl: string | null = null;
+      if (isTauriMode && pairingId) {
+        const localExport = await exportFigmaNodeLocally(pairingId, {
           fileKey: figmaNodeInfo.fileKey,
-          nodeIds: [figmaNodeInfo.nodeId],
+          nodeId: figmaNodeInfo.nodeId,
           format,
           scale: resolvedScale,
-        }),
-      });
-      if (!batchRes.ok) {
-        const errData = await batchRes.json().catch(() => ({}));
-        throw new Error(errData.error || `Server returned HTTP ${batchRes.status}`);
+        });
+        if (localExport?.dataUrl) {
+          dataUrl = localExport.dataUrl;
+        }
       }
-      const { images } = await batchRes.json() as { images: Record<string, string | null> };
-      const dataUrl = images[figmaNodeInfo.nodeId];
+
+      if (!dataUrl) {
+        // Fallback: render-batch cloud endpoint (for closed files or non-Tauri sessions)
+        const batchRes = await fetch('/api/figma/render-batch', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${figmaToken}`,
+          },
+          body: JSON.stringify({
+            fileKey: figmaNodeInfo.fileKey,
+            nodeIds: [figmaNodeInfo.nodeId],
+            format,
+            scale: resolvedScale,
+          }),
+        });
+        if (!batchRes.ok) {
+          const errData = await batchRes.json().catch(() => ({}));
+          throw new Error(errData.error || `Server returned HTTP ${batchRes.status}`);
+        }
+        const { images } = await batchRes.json() as { images: Record<string, string | null> };
+        dataUrl = images[figmaNodeInfo.nodeId];
+      }
       if (!dataUrl) {
         throw new Error('Figma batch render returned no image for the specified node.');
       }
@@ -184,24 +204,30 @@ export function useFigmaImporter(
           const registerImage = async () => {
             try {
               const boardInfo = await miro.board.getInfo();
-              const patchRes = await fetch('/api/miro/update-image', {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Authorization': `Bearer ${miroToken}`,
-                },
-                body: JSON.stringify({
-                  boardId: boardInfo.id,
-                  itemId: imageId,
-                  dataUrl,
-                  nodeName: safeName,
-                  fileKey: figmaNodeInfo.fileKey,
-                  nodeId: figmaNodeInfo.nodeId,
-                  format,
-                  scale: resolvedScale,
-                  platform: 'figma',
-                }),
-              });
+              const updatePayload = {
+                boardId: boardInfo.id,
+                itemId: imageId,
+                dataUrl,
+                nodeName: safeName,
+                fileKey: figmaNodeInfo.fileKey,
+                nodeId: figmaNodeInfo.nodeId,
+                format,
+                scale: resolvedScale,
+              };
+              let patchRes: Response | null = null;
+              if (isTauriMode) {
+                patchRes = await updateMiroImageViaTauri(updatePayload, miroToken);
+              }
+              if (!patchRes) {
+                patchRes = await fetch('/api/miro/update-image', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${miroToken}`,
+                  },
+                  body: JSON.stringify({ ...updatePayload, platform: 'figma' }),
+                });
+              }
               if (patchRes.ok) {
                 // Re-assert the widget title after PATCH to fix any server-side encoding
                 const widget = await miro.board.getById(imageId).catch(() => null);

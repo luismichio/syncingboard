@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { decodeHtmlEntities } from '@/lib/decodeHtmlEntities';
 import { formatDuration } from '@/lib/formatDuration';
+import { evaluateBatchLimits } from '@/lib/sync/batchLimits';
 import { GroupedSyncedImage } from '../types';
 
 interface SyncTabProps {
@@ -23,6 +24,8 @@ interface SyncTabProps {
   /** FigJam mirror mode: the list is a registry of placed mirrors, not a
    * Miro canvas selection — different wording and no 3-item cap. */
   mirrorMode?: boolean;
+  /** Local Tauri SyncingBridge active: lifts Figma batch cap to 50 while keeping Penpot at 3. */
+  useTauri?: boolean;
 }
 
 export function SyncTab({
@@ -43,8 +46,10 @@ export function SyncTab({
   onRemoveGroup,
   availableScales,
   mirrorMode = false,
+  useTauri = false,
 }: SyncTabProps) {
   const [copiedNodeId, setCopiedNodeId] = useState<string | null>(null);
+  const batchCheck = evaluateBatchLimits(groupedItems, Boolean(useTauri));
   return (
     <div className="flex-grow flex flex-col justify-between">
       <div className="space-y-3">
@@ -235,20 +240,20 @@ export function SyncTab({
               </label>
             )}
 
-            {groupedItems.length > 3 && (
+            {!mirrorMode && batchCheck.blocked && (
               <div className="flex items-start gap-2 p-2.5 mt-2 rounded-md bg-bg-card border border-amber-500/60">
                 <svg className="w-4 h-4 shrink-0 mt-0.5 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
                 </svg>
                 <span className="text-xs font-mono leading-snug text-text-page">
-                  Only 3 items can be synced at once. Deselect some to continue.
+                  {batchCheck.reason}
                 </span>
               </div>
             )}
 
             <button
               onClick={onSync}
-              disabled={isSyncing || cooldownSeconds > 0 || !hasMiroToken || groupedItems.length > 3}
+              disabled={isSyncing || cooldownSeconds > 0 || !hasMiroToken || (!mirrorMode && batchCheck.blocked)}
               className="w-full mt-2 font-mono font-bold text-xs py-2.5 rounded bg-accent text-bg-page hover:opacity-90 transition disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
             >
               {cooldownSeconds > 0

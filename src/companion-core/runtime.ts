@@ -479,7 +479,7 @@ export function initCompanionRuntime(options: CompanionRuntimeOptions): void {
         const reqId = command.id;
         pendingRequests.track(reqId);
         window.parent.postMessage({ action: 'get-selection', requestId: reqId }, '*');
-      } else if (command.action === 'export' && platform === 'penpot') {
+      } else if (command.action === 'export') {
         log(`Export request received from ${clientOrigin}.`);
         const reqId = command.id;
         pendingRequests.track(reqId);
@@ -490,10 +490,12 @@ export function initCompanionRuntime(options: CompanionRuntimeOptions): void {
           currentNodeId;
         const formatVal = cmdRecord.format === 'png' || cmdRecord.format === 'svg' ? cmdRecord.format : 'png';
         const scaleVal = typeof cmdRecord.scale === 'number' ? cmdRecord.scale : 2;
+        const fileKeyVal = typeof cmdRecord.fileKey === 'string' ? cmdRecord.fileKey : undefined;
         window.parent.postMessage(
           {
             action: 'export-shape',
             shapeId: targetShapeId,
+            fileKey: fileKeyVal,
             requestId: reqId,
             format: formatVal,
             scale: scaleVal,
@@ -934,7 +936,7 @@ export function initCompanionRuntime(options: CompanionRuntimeOptions): void {
       }
     }
 
-    if (response.action === 'export-result' && platform === 'penpot') {
+    if (response.action === 'export-result') {
       const request = pendingRequests.take(response.requestId);
       if (request) {
         if (activeTransport === 'local' && localBridgeWs && localBridgeWs.readyState === WebSocket.OPEN) {

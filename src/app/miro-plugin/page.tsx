@@ -385,6 +385,7 @@ export default function MiroPluginPage() {
             onRefreshNodeName={handleRefreshNodeName}
             onRemoveGroup={handleDeselectGroup}
             availableScales={AVAILABLE_SCALES}
+            useTauri={useTauri}
           />
         )}
 
