@@ -129,10 +129,10 @@ export default function MiroPluginPage() {
       if (health && health.status === 'ok') {
         if (!useTauri) {
           setUseTauri(true);
+          releaseLocalRelaySession();
           void notifyTauriMiroConnect();
         }
         setFigmaConnected(health.figmaConnected === true);
-        releaseLocalRelaySession();
       } else {
         setUseTauri(false);
         setFigmaConnected(false);

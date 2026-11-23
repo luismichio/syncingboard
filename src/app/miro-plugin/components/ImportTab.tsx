@@ -94,7 +94,7 @@ figmaConnected,
       <RelayStatusBanner
         userIdHash={relayUserIdHash}
         boardId={relayBoardId}
-        useTauri={useTauri}
+        useTauri={Boolean(useTauri) && importPlatform !== 'penpot'}
         figmaConnected={figmaConnected}
       />
       {mirrorMode && onResetCache ? (

@@ -372,7 +372,8 @@ export async function subscribeRelayLive(
 ): Promise<() => void> {
   const isTauriMode = typeof window !== 'undefined' && localStorage.getItem('syncingboard_use_tauri') === 'true';
 
-  if (isTauriMode && typeof WebSocket !== 'undefined') {
+  // Penpot runs in the browser sandbox (Chrome LNA blocks loopback), so only Figma routes via local Tauri WS.
+  if (isTauriMode && platform !== 'penpot' && typeof WebSocket !== 'undefined') {
     let ws: WebSocket | null = null;
     let active = true;
     const port = (typeof window !== 'undefined' && localStorage.getItem('syncingboard_bridge_port')) || '4401';
@@ -563,7 +564,9 @@ async function callLocalTauriRelay(body: RelayRequestBody): Promise<RelayJson> {
 export async function callRelay(body: RelayRequestBody): Promise<RelayJson> {
   const isTauriMode = typeof window !== 'undefined' && localStorage.getItem('syncingboard_use_tauri') === 'true';
 
-  if (isTauriMode && typeof WebSocket !== 'undefined') {
+  // Hybrid dual-transport: Figma routes via local Tauri SyncingBridge when enabled,
+  // while Penpot always uses Ably Cloud Relay (avoiding Chrome LNA blocks & cross-talk).
+  if (isTauriMode && body.platform !== 'penpot' && typeof WebSocket !== 'undefined') {
     try {
       return await callLocalTauriRelay(body);
     } catch (err: unknown) {
