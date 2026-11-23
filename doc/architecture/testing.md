@@ -1,6 +1,6 @@
 ---
 title: Testing & Quality Assurance
-description: Technical breakdown of SyncingBoard's 132 automated Vitest tests across 18 files covering token security, rate limiting, URL parsers, relay fairness, target adapters, and API route handlers.
+description: Technical breakdown of SyncingBoard's 198 automated Vitest tests across 29 files (plus Rust unit tests) covering token security, rate limiting, bridge validation, batch limits, companion core, target adapters, and API route handlers.
 ---
 
 # Testing & Quality Assurance
@@ -25,7 +25,7 @@ graph TD
 
 ## Test Suites Breakdown
 
-SyncingBoard includes **132 passing automated tests** across 18 specialized test files:
+SyncingBoard includes **198 passing automated tests** across 29 specialized Vitest files (plus Rust unit tests in `tauri-bridge/src-tauri/src/lib.rs`):
 
 | Test File | Category | Focus Area & Assertions |
 | :--- | :--- | :--- |
@@ -47,6 +47,12 @@ SyncingBoard includes **132 passing automated tests** across 18 specialized test
 | **`src/app/miro-plugin/MiroAdapter.test.ts`** | Adapters | Miro widget create/update: metadata payloads, undefined-value sanitising before `setMetadata`, and title signature handling. |
 | **`src/app/figjam-mirror/FigJamAdapter.test.ts`** | FigJam Adapter | FigJam target adapter unit coverage (parity with the Miro adapter behaviour on the FigJam surface). |
 | **`src/app/api/build-id/route.test.ts`** | API Routes (Internal) | `GET /api/build-id` returns `local-<sha>` in dev and the empty string in production builds. |
+| **`src/lib/sync/__tests__/tauriBridgeClient.test.ts`** | Local Bridge | 3-tier local broker probing, WebSocket relay connection, and auto-fallback state transitions. |
+| **`src/lib/sync/__tests__/bridgeValidation.test.ts`** | Bridge Security | Strict `parseBridgePort` (`1024–65535`, SSRF/authority-injection rejection) and `clampBridgeTimeout`. |
+| **`src/lib/sync/__tests__/batchLimits.test.ts`** | Hybrid Batch Caps | Enforces 3-item cloud cap vs. 50 local Figma / 3 Penpot split cap in Tauri mode. |
+| **`src/companion-core/__tests__/*.test.ts`** | Companion Core (6 files) | Session state machine, protocol encoding/decoding, relay submission, token handling, theme sync, and validation. |
+| **`src/app/miro-plugin/__tests__/deselectSync.test.ts`** | Selection Deselection | Multi-copy group dismissal, canvas ID filtering, and dynamic batch threshold re-evaluation. |
+| **`src/lib/formatDuration.test.ts`** | Formatting | Human-readable cooldown durations and local clock-time reset formatting. |
 
 ---
 
@@ -55,7 +61,7 @@ SyncingBoard includes **132 passing automated tests** across 18 specialized test
 Run the test suite during development using the following commands:
 
 ```bash
-# Run all 132 tests once
+# Run all 198 tests once
 yarn test
 
 # Run tests in interactive watch mode

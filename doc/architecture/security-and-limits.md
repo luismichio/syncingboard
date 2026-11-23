@@ -40,11 +40,14 @@ SyncingBoard implements a sliding-window rate limiter (`@upstash/ratelimit` via 
 * **Miro API Quotas:** Miro limits image updates (`PATCH`) to 50 requests/min per user token. For detailed rate tier specifications, see the official [Miro REST API Rate Limiting Reference](https://developers.miro.com/reference/rate-limiting). SyncingBoard enforces a **500ms delay** between consecutive widget updates to ensure compliance.
 * **Batch Limit:** Community plan limits sync to **3 unique images per batch**. UI warning banner in `SyncTab.tsx` disables the sync button when exceeded.
 * **Scale Restriction:** Community plan scale dropdown is limited to 1x and 2x (`MAX_SCALE=2`). Self-host deployments support 1x–4x (`MAX_SCALE=4`).
+* **Hybrid Batch Caps (`src/lib/sync/batchLimits.ts`):**
+  * **Cloud (`useTauri === false`):** Maximum **3 unique items** per sync (protects Vercel Hobby 10s execution limits and shared Ably/Upstash quotas).
+  * **Local `SyncingBridge` (`useTauri === true`):** Up to **50 Figma items** per sync (matching Miro's ~90–200 images/min credit budget and Figma's batch ceiling), while **Penpot items** remain capped at **3** (protecting Cloud Relay quotas).
 
 ### Infrastructure & Cloud Provider Quotas
 
 * **Vercel Serverless Limits:**
-  * **4.5 MB Response Payload Limit:** Vercel serverless functions enforce a 4.5MB HTTP response body cap. Images exceeding 4.5MB require the Tauri extender or non-serverless hosting (AWS, Railway, Render).
+  * **4.5 MB Response Payload Limit:** Vercel serverless functions enforce a 4.5MB HTTP response body cap. Running **SyncingBridge (Local)** bypasses Vercel with a **50 MB** direct Rust → Miro `PATCH` path (`POST /miro/update-image`).
   * **60s Execution Timeout:** Configured via `vercel.json` (`maxDuration: 60`).
   * See official [Vercel Serverless Function Limits](https://vercel.com/docs/functions/serverless-functions/runtimes#max-duration).
 
@@ -67,8 +70,9 @@ Opening Miro or Figma OAuth login pages inside iframe sandboxes triggers browser
 * **Handshake Mechanism:** Top-level popup OAuth callback handlers (`/api/oauth/figma/callback`, `/api/oauth/miro/callback`) write tokens to Upstash Redis using `SETEX` with a **300-second (5-minute) TTL**, mapped to `oauth:store:${hashId(state)}`.
 * **Consumer Polling:** The Miro plugin panel inside the desktop/iframe context polls `/api/oauth/store?state=...`, retrieves and deletes the token payload (`GET` + `DEL`), and completes login without persistent database storage.
 
-### CORS & Private Network Access (PNA) Preflights
-When local desktop calls are initiated (e.g. Tauri bridge):
-* **Strict Origin Reflection:** Backend uses `tower_http`'s `AllowOrigin::mirror_request()` to reflect exact request origins rather than wildcards.
-* **PNA Preflight Response:** Explicitly returns `Access-Control-Allow-Private-Network: true` to satisfy Chromium security preflights.
-* **`targetAddressSpace` Fetch Parameter:** Local fetches append `targetAddressSpace: 'loopback'` to satisfy Chromium local network access policies.
+### Local Bridge Security & CORS / PNA Controls (`SyncingBridge`)
+When local desktop calls are initiated via the Tauri broker (`127.0.0.1:4401`):
+* **Strict Origin Allowlist (`is_allowed_origin`):** The Rust Axum middleware validates every `Origin` header against an explicit allowlist (`localhost`, `127.0.0.1`, `"null"` for sandboxed plugin iframes, and HTTPS `miro.com`, `figma.com`, `penpot.app`, `syncingboard.com`, `vercel.app`, `trycloudflare.com`, plus optional `SYNCINGBRIDGE_ALLOWED_ORIGINS`), rejecting untrusted origins with `403 Forbidden`.
+* **PNA Preflight Response:** Explicitly returns `Access-Control-Allow-Private-Network: true` and explicit allowed headers (`Content-Type, Authorization, X-Figma-Token, X-Bridge-Port`).
+* **SSRF & Path-Injection Validation:** Next.js `/api/bridge/*` routes validate ports strictly via `parseBridgePort()` (`1024–65535` integer only, blocking URL authority injection like `4401@attacker.com`) and clamp timeouts (`1000–30000ms`). The Rust `/miro/update-image` handler validates `boardId` and `itemId` formats before constructing Miro REST API URLs.
+* **Immediate Disconnect on Pause:** Pausing the broker broadcasts on a Tokio `watch` channel to close active WebSocket sessions cleanly and trigger client fallback to Ably.
