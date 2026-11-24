@@ -171,6 +171,14 @@ export default function FigJamPluginPage() {
     await hook.githubDocs.retargetGitHubSection(itemIds, url, sectionId, sectionTitle);
   };
 
+  const onGitHubBranchChange = async (
+    itemIds: string[],
+    nextUrl: string,
+    nextBranch: string
+  ): Promise<void> => {
+    await hook.githubDocs.retargetGitHubBranch(itemIds, nextUrl, nextBranch);
+  };
+
   const onRefreshNodeName = async (): Promise<void> => {
     // Node name refreshes flow through the Figma source during the next sync.
   };
@@ -196,6 +204,7 @@ export default function FigJamPluginPage() {
             onSync={hook.syncSelectedScreens}
             onGroupSettingChange={onGroupSettingChange}
             onGitHubSectionChange={onGitHubSectionChange}
+            onGitHubBranchChange={onGitHubBranchChange}
             onRefreshNodeName={onRefreshNodeName}
             onRemoveGroup={hook.handleDeselectGroup}
             availableScales={AVAILABLE_SCALES}
@@ -248,6 +257,8 @@ export default function FigJamPluginPage() {
               placeTextOnBoard: hook.githubDocs.placeAsText,
               bindSelectedTextWidget: hook.githubDocs.bindSelectedWidgets,
               syncSelectedGitHubDocs: hook.syncSelectedScreens,
+              branches: hook.githubDocs.branches,
+              switchBranch: hook.githubDocs.switchBranch,
             }}
           />
         )}

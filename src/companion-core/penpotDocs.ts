@@ -117,6 +117,7 @@ export function initPenpotDocs(): void {
   const patInput = document.getElementById('docs-github-pat') as HTMLInputElement | null;
   const loadBtn = document.getElementById('docs-load-btn') as HTMLButtonElement | null;
   const sectionWrap = document.getElementById('docs-section-wrap') as HTMLElement | null;
+  const branchSelect = document.getElementById('docs-branch-select') as HTMLSelectElement | null;
   const sectionSelect = document.getElementById('docs-section-select') as HTMLSelectElement | null;
   const placeBtn = document.getElementById('docs-place-btn') as HTMLButtonElement | null;
   const bindBtn = document.getElementById('docs-bind-btn') as HTMLButtonElement | null;
@@ -129,6 +130,7 @@ export function initPenpotDocs(): void {
   const selectedUrlEl = document.getElementById('docs-selected-url') as HTMLAnchorElement | null;
   const selectedOpenBtn = document.getElementById('docs-selected-open-btn') as HTMLAnchorElement | null;
   const selectedCopyBtn = document.getElementById('docs-selected-copy-btn') as HTMLButtonElement | null;
+  const selectedBranchSelect = document.getElementById('docs-selected-branch') as HTMLSelectElement | null;
   const selectedSectionSelect = document.getElementById('docs-selected-section') as HTMLSelectElement | null;
   const syncSelectedBtn = document.getElementById('docs-sync-selected-btn') as HTMLButtonElement | null;
 
@@ -268,6 +270,7 @@ export function initPenpotDocs(): void {
   let currentDoc: GitHubDocResponse | null = null;
   let selectedBound: { id: string; name: string; meta: PenpotGitMeta } | null = null;
   const sectionsCache = new Map<string, GitHubDocResponse>();
+  const branchesCache = new Map<string, string[]>();
 
   const pending = new Map<
     string,
@@ -301,15 +304,18 @@ export function initPenpotDocs(): void {
 
   const fetchDoc = async (
     url: string,
-    etag?: string
+    etag?: string,
+    branchOverride?: string
   ): Promise<GitHubDocResponse | { unchanged: true }> => {
     const headers: Record<string, string> = {};
     const token = getAuthToken();
     if (token) headers['Authorization'] = `Bearer ${token}`;
     if (etag) headers['If-None-Match'] = etag;
-    const res = await fetch(`${getApiBase()}/api/github/markdown?url=${encodeURIComponent(url)}`, {
-      headers,
-    });
+    const branchQuery = branchOverride ? `&branch=${encodeURIComponent(branchOverride)}` : '';
+    const res = await fetch(
+      `${getApiBase()}/api/github/markdown?url=${encodeURIComponent(url)}${branchQuery}`,
+      { headers }
+    );
     if (res.status === 304) return { unchanged: true };
     const data = (await res.json().catch(() => ({}))) as Partial<GitHubDocResponse> & {
       error?: string;
@@ -318,8 +324,50 @@ export function initPenpotDocs(): void {
       throw new Error(data.error || `GitHub fetch failed (${res.status})`);
     }
     const doc = data as GitHubDocResponse;
+    sectionsCache.set(doc.canonicalUrl, doc);
     sectionsCache.set(url, doc);
     return doc;
+  };
+
+  const fetchRepoBranches = async (owner: string, repo: string): Promise<string[]> => {
+    const key = `${owner}/${repo}`;
+    const cached = branchesCache.get(key);
+    if (cached) return cached;
+    try {
+      const headers: Record<string, string> = {};
+      const token = getAuthToken();
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const res = await fetch(
+        `${getApiBase()}/api/github/branches?owner=${encodeURIComponent(owner)}&repo=${encodeURIComponent(repo)}`,
+        { headers }
+      );
+      if (!res.ok) return [];
+      const data = (await res.json()) as { branches?: string[] };
+      const list = Array.isArray(data.branches) ? data.branches : [];
+      if (list.length > 0) branchesCache.set(key, list);
+      return list;
+    } catch {
+      return [];
+    }
+  };
+
+  const populateBranchSelect = (
+    selectEl: HTMLSelectElement | null,
+    branches: string[],
+    currentBranch: string
+  ): void => {
+    if (!selectEl) return;
+    selectEl.innerHTML = '';
+    const items = branches.includes(currentBranch)
+      ? branches
+      : [currentBranch, ...branches];
+    for (const b of items) {
+      const opt = document.createElement('option');
+      opt.value = b;
+      opt.textContent = b;
+      selectEl.appendChild(opt);
+    }
+    selectEl.value = currentBranch;
   };
 
   const populateSelect = (selectEl: HTMLSelectElement, doc: GitHubDocResponse, currentId?: string): void => {
@@ -407,30 +455,57 @@ export function initPenpotDocs(): void {
     const cached = sectionsCache.get(sel.gitMeta.githubUrl);
     if (cached) {
       populateSelect(selectedSectionSelect, cached, sel.gitMeta.sectionId);
+      const cachedBranches = branchesCache.get(`${cached.owner}/${cached.repo}`) || [];
+      populateBranchSelect(selectedBranchSelect, cachedBranches, sel.gitMeta.githubBranch || cached.branch);
     } else {
       selectedSectionSelect.innerHTML = '';
       const opt = document.createElement('option');
       opt.value = sel.gitMeta.sectionId || '*';
       opt.textContent = sel.gitMeta.sectionHeading || sel.gitMeta.sectionId || 'Current section';
       selectedSectionSelect.appendChild(opt);
+      populateBranchSelect(selectedBranchSelect, [], sel.gitMeta.githubBranch || 'main');
     }
   };
 
-  // Lazy-load section list when user opens the Selected Bound Doc section dropdown
+  // Lazy-load section & branch lists when user opens either dropdown on Selected Bound Doc
   const ensureSelectedSectionsLoaded = async (): Promise<void> => {
     if (!selectedBound || !selectedSectionSelect) return;
     const url = selectedBound.meta.githubUrl;
-    if (sectionsCache.has(url)) return;
+    const targetBranch = selectedBranchSelect?.value || selectedBound.meta.githubBranch || 'main';
     try {
-      const doc = await fetchDoc(url);
+      const doc = sectionsCache.get(url) || (await fetchDoc(url, undefined, targetBranch));
       if ('unchanged' in doc) return;
       if (selectedBound && selectedBound.meta.githubUrl === url) {
         populateSelect(selectedSectionSelect, doc, selectedBound.meta.sectionId);
+        const branches = await fetchRepoBranches(doc.owner, doc.repo);
+        if (selectedBound && selectedBound.meta.githubUrl === url) {
+          populateBranchSelect(selectedBranchSelect, branches, targetBranch);
+        }
       }
     } catch {
-      // Keep current section option if offline or auth required
+      // Keep current option if offline or auth required
     }
   };
+
+  selectedBranchSelect?.addEventListener('focus', () => {
+    void ensureSelectedSectionsLoaded();
+  });
+  selectedBranchSelect?.addEventListener('mousedown', () => {
+    void ensureSelectedSectionsLoaded();
+  });
+  selectedBranchSelect?.addEventListener('change', async () => {
+    if (!selectedBound || !selectedBranchSelect || !selectedSectionSelect) return;
+    const nextBranch = selectedBranchSelect.value;
+    setStatus(`Loading sections for branch "${nextBranch}"...`);
+    try {
+      const doc = await fetchDoc(selectedBound.meta.githubUrl, undefined, nextBranch);
+      if ('unchanged' in doc) return;
+      populateSelect(selectedSectionSelect, doc, selectedSectionSelect.value || selectedBound.meta.sectionId);
+      setStatus(`Branch set to "${nextBranch}" — click SYNC SELECTED to update.`);
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : `Failed to load branch "${nextBranch}"`, true);
+    }
+  });
 
   selectedSectionSelect?.addEventListener('focus', () => {
     void ensureSelectedSectionsLoaded();
@@ -450,12 +525,19 @@ export function initPenpotDocs(): void {
   syncSelectedBtn?.addEventListener('click', async () => {
     if (!selectedBound) return;
     const { id: shapeId, meta } = selectedBound;
+    const targetBranch = selectedBranchSelect?.value || meta.githubBranch || 'main';
     const targetSectionId = selectedSectionSelect?.value || meta.sectionId || '*';
+    const branchChanged = targetBranch !== (meta.githubBranch || 'main');
     const sectionChanged = targetSectionId !== (meta.sectionId || '*');
+    const skipEtag = branchChanged || sectionChanged;
     syncSelectedBtn.disabled = true;
-    setStatus(`Syncing "${sectionChanged ? targetSectionId : meta.sectionHeading || meta.sectionId}"...`);
+    setStatus(`Syncing "${sectionChanged ? targetSectionId : meta.sectionHeading || meta.sectionId}" (${targetBranch})...`);
     try {
-      const doc = await fetchDoc(meta.githubUrl, sectionChanged ? undefined : meta.etag);
+      const doc = await fetchDoc(
+        meta.githubUrl,
+        skipEtag ? undefined : meta.etag,
+        branchChanged ? targetBranch : undefined
+      );
       if ('unchanged' in doc) {
         setStatus(`✓ "${meta.sectionHeading || meta.sectionId}" is already up to date.`);
         return;
@@ -463,7 +545,7 @@ export function initPenpotDocs(): void {
       const { markdown, heading, contentHash } = resolveSection(doc, targetSectionId);
       const compiled = compileToCharacterRanges(markdown);
       const nextMeta: PenpotGitMeta = {
-        githubUrl: meta.githubUrl,
+        githubUrl: doc.canonicalUrl,
         githubBranch: doc.branch,
         sectionId: targetSectionId,
         sectionHeading: heading,
@@ -478,7 +560,7 @@ export function initPenpotDocs(): void {
         meta: nextMeta,
       });
       if (reply.error) throw new Error(reply.error);
-      setStatus(`✓ Updated "${heading}".`);
+      setStatus(`✓ Updated "${heading}" (${doc.branch}).`);
     } catch (err) {
       setStatus(err instanceof Error ? err.message : 'Sync failed', true);
     } finally {
@@ -514,26 +596,46 @@ export function initPenpotDocs(): void {
     entry.resolve(msg);
   });
 
-  loadBtn.addEventListener('click', async () => {
+  const loadDocFromUrl = async (url: string, branchOverride?: string): Promise<void> => {
+    loadBtn.disabled = true;
+    if (branchSelect) branchSelect.disabled = true;
+    setStatus(branchOverride ? `Loading branch "${branchOverride}"...` : 'Loading Markdown from GitHub...');
+    try {
+      const result = await fetchDoc(url, undefined, branchOverride);
+      if ('unchanged' in result) return;
+      currentDoc = result;
+      if (branchOverride) urlInput.value = result.canonicalUrl;
+      populateSelect(sectionSelect, result);
+      populateBranchSelect(branchSelect, branchesCache.get(`${result.owner}/${result.repo}`) || [], result.branch);
+      if (sectionWrap) sectionWrap.style.display = 'flex';
+      setStatus(`Loaded ${result.path} (${result.branch} · ${result.sections.length} sections).`);
+      void fetchRepoBranches(result.owner, result.repo).then((branches) => {
+        if (currentDoc && currentDoc.owner === result.owner && currentDoc.repo === result.repo) {
+          populateBranchSelect(branchSelect, branches, currentDoc.branch);
+        }
+      });
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : 'Failed to load Markdown', true);
+    } finally {
+      loadBtn.disabled = false;
+      if (branchSelect) branchSelect.disabled = false;
+    }
+  };
+
+  loadBtn.addEventListener('click', () => {
     const url = urlInput.value.trim();
     if (!url) {
       setStatus('Paste a GitHub Markdown (.md) URL first.', true);
       return;
     }
-    loadBtn.disabled = true;
-    setStatus('Loading Markdown from GitHub...');
-    try {
-      const result = await fetchDoc(url);
-      if ('unchanged' in result) return;
-      currentDoc = result;
-      populateSelect(sectionSelect, result);
-      if (sectionWrap) sectionWrap.style.display = 'flex';
-      setStatus(`Loaded ${result.path} (${result.sections.length} sections).`);
-    } catch (err) {
-      setStatus(err instanceof Error ? err.message : 'Failed to load Markdown', true);
-    } finally {
-      loadBtn.disabled = false;
-    }
+    void loadDocFromUrl(url);
+  });
+
+  branchSelect?.addEventListener('change', () => {
+    if (!currentDoc || !branchSelect) return;
+    const nextBranch = branchSelect.value;
+    if (!nextBranch || nextBranch === currentDoc.branch) return;
+    void loadDocFromUrl(currentDoc.canonicalUrl, nextBranch);
   });
 
   const buildPayload = () => {

@@ -1007,6 +1007,15 @@ figma.ui.onmessage = async (msg) => {
       next.sectionHeading = msg.sectionHeading;
       next.name = msg.sectionHeading;
     }
+    if (typeof msg.githubUrl === 'string') {
+      next.githubUrl = msg.githubUrl;
+      next.fileKey = msg.githubUrl;
+      next.etag = '';
+    }
+    if (typeof msg.githubBranch === 'string') {
+      next.githubBranch = msg.githubBranch;
+      next.etag = '';
+    }
     try {
       figjamAllTracked()
         .filter(function (n) {
@@ -1024,7 +1033,7 @@ figma.ui.onmessage = async (msg) => {
         })
         .forEach(function (n) {
           const meta = figjamMeta(n);
-          const nextFileKey = meta.fileKey || '';
+          const nextFileKey = next.fileKey || meta.fileKey || '';
           const nextNodeId = next.nodeId || meta.nodeId || '';
           const updated = Object.assign({}, meta, next, { key: figjamKey(nextFileKey, nextNodeId) });
           n.setPluginData(SB_META_KEY, JSON.stringify(updated));

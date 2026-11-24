@@ -20,6 +20,7 @@ interface SyncTabProps {
   onSync: () => void;
   onGroupSettingChange: (itemIds: string[], key: 'format' | 'scale', value: unknown) => void;
   onGitHubSectionChange?: (itemIds: string[], sectionId: string, sectionTitle: string) => Promise<void> | void;
+  onGitHubBranchChange?: (itemIds: string[], nextUrl: string, nextBranch: string) => Promise<void> | void;
   onRefreshNodeName?: (fileKey: string, nodeId: string, platform: 'figma' | 'penpot') => void;
   onRemoveGroup?: (groupKey: string, itemIds: string[]) => void;
   availableScales: number[];
@@ -45,6 +46,7 @@ export function SyncTab({
   onSync,
   onGroupSettingChange,
   onGitHubSectionChange,
+  onGitHubBranchChange,
   onRefreshNodeName,
   onRemoveGroup,
   availableScales,
@@ -55,7 +57,12 @@ export function SyncTab({
   const [sectionsByUrl, setSectionsByUrl] = useState<
     Record<string, { id: string; title: string; level: number }[]>
   >({});
+  const [docMetaByUrl, setDocMetaByUrl] = useState<
+    Record<string, { owner: string; repo: string; branch: string; path: string }>
+  >({});
+  const [branchesByRepo, setBranchesByRepo] = useState<Record<string, string[]>>({});
   const fetchedUrlsRef = useRef<Set<string>>(new Set());
+  const fetchedReposRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     const githubUrls = [
@@ -88,10 +95,37 @@ export function SyncTab({
           });
           if (!res.ok) return;
           const data = (await res.json()) as {
+            owner?: string;
+            repo?: string;
+            branch?: string;
+            path?: string;
             sections?: { id: string; title: string; level: number }[];
           };
           if (Array.isArray(data.sections)) {
             setSectionsByUrl((prev) => ({ ...prev, [url]: data.sections || [] }));
+          }
+          if (data.owner && data.repo && data.branch && data.path) {
+            const meta = {
+              owner: data.owner,
+              repo: data.repo,
+              branch: data.branch,
+              path: data.path,
+            };
+            setDocMetaByUrl((prev) => ({ ...prev, [url]: meta }));
+            const repoKey = `${data.owner}/${data.repo}`;
+            if (!fetchedReposRef.current.has(repoKey)) {
+              fetchedReposRef.current.add(repoKey);
+              const bRes = await fetch(
+                `/api/github/branches?owner=${encodeURIComponent(data.owner)}&repo=${encodeURIComponent(data.repo)}`,
+                { headers, cache: 'no-store' }
+              );
+              if (bRes.ok) {
+                const bData = (await bRes.json()) as { branches?: string[] };
+                if (Array.isArray(bData.branches)) {
+                  setBranchesByRepo((prev) => ({ ...prev, [repoKey]: bData.branches || [] }));
+                }
+              }
+            }
           }
         } catch {
           fetchedUrlsRef.current.delete(url);
@@ -213,7 +247,41 @@ export function SyncTab({
 
                   {group.platform === 'github' ? (
                   <div className="flex gap-2 mt-1 pt-2 border-t border-border-card/30">
-                    <div className="flex-1 flex flex-col gap-0.5">
+                    {onGitHubBranchChange && docMetaByUrl[group.fileKey] && (
+                      <div className="w-[86px] shrink-0 flex flex-col gap-0.5">
+                        <span className="text-[8px] font-mono text-text-muted uppercase tracking-wider">Branch</span>
+                        <select
+                          value={docMetaByUrl[group.fileKey].branch}
+                          disabled={isSyncing}
+                          onChange={(e) => {
+                            const nextBranch = e.target.value;
+                            const meta = docMetaByUrl[group.fileKey];
+                            if (!meta || !nextBranch || nextBranch === meta.branch) return;
+                            const nextUrl = `https://github.com/${meta.owner}/${meta.repo}/blob/${nextBranch}/${meta.path}`;
+                            void onGitHubBranchChange(
+                              group.widgets.map((w) => w.id),
+                              nextUrl,
+                              nextBranch
+                            );
+                          }}
+                          className="bg-bg-page border border-border-card text-[10px] font-mono rounded px-1 py-0.5 focus:outline-none focus:border-accent text-accent w-full cursor-pointer disabled:opacity-50"
+                        >
+                          {!(branchesByRepo[`${docMetaByUrl[group.fileKey].owner}/${docMetaByUrl[group.fileKey].repo}`] || []).includes(
+                            docMetaByUrl[group.fileKey].branch
+                          ) && (
+                            <option value={docMetaByUrl[group.fileKey].branch}>
+                              {docMetaByUrl[group.fileKey].branch}
+                            </option>
+                          )}
+                          {(branchesByRepo[`${docMetaByUrl[group.fileKey].owner}/${docMetaByUrl[group.fileKey].repo}`] || []).map((b) => (
+                            <option key={b} value={b}>
+                              {b}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0 flex flex-col gap-0.5">
                       <span className="text-[8px] font-mono text-text-muted uppercase tracking-wider">Section</span>
                       <select
                         value={group.nodeId}

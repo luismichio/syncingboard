@@ -12,7 +12,9 @@ export const dynamic = 'force-dynamic';
 const MAX_MARKDOWN_BYTES = 512 * 1024; // 512 KB safety cap
 
 async function handler(request: Request) {
-  const urlParam = new URL(request.url).searchParams.get('url') || '';
+  const { searchParams } = new URL(request.url);
+  const urlParam = searchParams.get('url') || '';
+  const branchOverride = (searchParams.get('branch') || '').trim();
   const parsed = parseGitHubMarkdownUrl(urlParam);
   if (!parsed) {
     return NextResponse.json(
@@ -21,10 +23,17 @@ async function handler(request: Request) {
     );
   }
 
+  // Optional explicit branch override (supports switching branches & slash-containing branch names)
+  const effectiveBranch =
+    branchOverride && !branchOverride.includes('..') && !/[\s?#]/.test(branchOverride)
+      ? branchOverride
+      : parsed.branch;
+  const effectiveCanonicalUrl = `https://github.com/${parsed.owner}/${parsed.repo}/blob/${effectiveBranch}/${parsed.path}`;
+
   const authHeader = request.headers.get('authorization');
   const ifNoneMatch = request.headers.get('if-none-match');
 
-  const apiUrl = `https://api.github.com/repos/${encodeURIComponent(parsed.owner)}/${encodeURIComponent(parsed.repo)}/contents/${parsed.path.split('/').map(encodeURIComponent).join('/')}?ref=${encodeURIComponent(parsed.branch)}`;
+  const apiUrl = `https://api.github.com/repos/${encodeURIComponent(parsed.owner)}/${encodeURIComponent(parsed.repo)}/contents/${parsed.path.split('/').map(encodeURIComponent).join('/')}?ref=${encodeURIComponent(effectiveBranch)}`;
 
   const ghHeaders: Record<string, string> = {
     Accept: 'application/vnd.github.raw+json',
@@ -87,9 +96,9 @@ async function handler(request: Request) {
     return NextResponse.json({
       owner: parsed.owner,
       repo: parsed.repo,
-      branch: parsed.branch,
+      branch: effectiveBranch,
       path: parsed.path,
-      canonicalUrl: parsed.canonicalUrl,
+      canonicalUrl: effectiveCanonicalUrl,
       sectionId: parsed.sectionId,
       lineRange: parsed.lineRange,
       lineRangeMarkdown,

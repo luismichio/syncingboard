@@ -22,6 +22,8 @@ export interface GitHubDocsProps {
   placeTextOnBoard: () => Promise<void>;
   bindSelectedTextWidget: () => Promise<void>;
   syncSelectedGitHubDocs: () => Promise<void>;
+  branches?: string[];
+  switchBranch?: (branch: string) => Promise<void>;
 }
 
 interface ImportTabProps {
@@ -421,6 +423,8 @@ figmaConnected,
           onLoadDoc={githubDocs.loadGitHubDoc}
           onPlaceText={githubDocs.placeTextOnBoard}
           onBindSelected={githubDocs.bindSelectedTextWidget}
+          branches={githubDocs.branches}
+          onBranchChange={githubDocs.switchBranch}
         />
       )}
         </>

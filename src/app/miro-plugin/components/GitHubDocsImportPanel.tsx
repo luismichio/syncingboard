@@ -15,6 +15,8 @@ interface GitHubDocsImportPanelProps {
   onLoadDoc: () => Promise<void>;
   onPlaceText: () => Promise<void>;
   onBindSelected: () => Promise<void>;
+  branches?: string[];
+  onBranchChange?: (branch: string) => Promise<void> | void;
 }
 
 export function GitHubDocsImportPanel({
@@ -31,6 +33,8 @@ export function GitHubDocsImportPanel({
   onLoadDoc,
   onPlaceText,
   onBindSelected,
+  branches = [],
+  onBranchChange,
 }: GitHubDocsImportPanelProps) {
   const [showPat, setShowPat] = useState(false);
 
@@ -104,7 +108,26 @@ export function GitHubDocsImportPanel({
               <span className="text-[10px] font-mono font-semibold text-text-page truncate">
                 {docData.owner}/{docData.repo}
               </span>
-              <span className="text-[9px] font-mono text-accent shrink-0">{docData.branch}</span>
+              {onBranchChange ? (
+                <select
+                  value={docData.branch}
+                  disabled={isLoadingDoc || isSyncingDocs}
+                  onChange={(e) => void onBranchChange(e.target.value)}
+                  title="Select GitHub branch"
+                  className="text-[9px] font-mono text-accent bg-bg-page border border-border-card rounded px-1.5 py-0.5 max-w-[110px] focus:outline-none focus:border-accent cursor-pointer disabled:opacity-50"
+                >
+                  {!branches.includes(docData.branch) && (
+                    <option value={docData.branch}>{docData.branch}</option>
+                  )}
+                  {branches.map((b) => (
+                    <option key={b} value={b}>
+                      {b}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <span className="text-[9px] font-mono text-accent shrink-0">{docData.branch}</span>
+              )}
             </div>
             <div className="text-[9px] font-mono text-text-muted truncate">{docData.path}</div>
 

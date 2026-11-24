@@ -74,6 +74,7 @@ export function useFigJamGitHubDocs(
     return localStorage.getItem(GITHUB_PAT_STORAGE_KEY) || '';
   });
   const [docData, setDocData] = useState<GitHubDocPayload | null>(null);
+  const [branches, setBranches] = useState<string[]>([]);
   const [selectedSectionId, setSelectedSectionId] = useState<string>('');
   const [isLoadingDoc, setIsLoadingDoc] = useState<boolean>(false);
   const [isSyncingDocs, setIsSyncingDocs] = useState<boolean>(false);
@@ -137,13 +138,18 @@ export function useFigJamGitHubDocs(
   }, [githubToken, githubPat]);
 
   const fetchDocPayload = useCallback(
-    async (url: string, etag?: string): Promise<GitHubDocPayload | { unchanged: true }> => {
+    async (
+      url: string,
+      etag?: string,
+      branchOverride?: string
+    ): Promise<GitHubDocPayload | { unchanged: true }> => {
       const headers: Record<string, string> = {};
       const token = getActiveAuthToken();
       if (token) headers['Authorization'] = `Bearer ${token}`;
       if (etag) headers['If-None-Match'] = etag;
 
-      const res = await fetch(`/api/github/markdown?url=${encodeURIComponent(url)}`, {
+      const branchQuery = branchOverride ? `&branch=${encodeURIComponent(branchOverride)}` : '';
+      const res = await fetch(`/api/github/markdown?url=${encodeURIComponent(url)}${branchQuery}`, {
         headers,
       });
       if (res.status === 304) {
@@ -160,37 +166,74 @@ export function useFigJamGitHubDocs(
     [getActiveAuthToken]
   );
 
-  const loadDoc = useCallback(async () => {
-    const trimmed = githubUrl.trim();
-    if (!trimmed) {
-      setDocError('Paste a GitHub Markdown (.md) URL first.');
-      return;
-    }
-    setIsLoadingDoc(true);
-    setDocError(null);
-    try {
-      const result = await fetchDocPayload(trimmed);
-      if ('unchanged' in result) return;
-      setDocData(result);
-      if (result.lineRange && result.lineRangeMarkdown !== null) {
-        setSelectedSectionId(`L${result.lineRange.start}-L${result.lineRange.end}`);
-      } else if (result.sections.length > 0) {
-        setSelectedSectionId(result.sections[0].id);
-      } else {
-        setSelectedSectionId('*');
+  const fetchBranches = useCallback(
+    async (owner: string, repo: string) => {
+      try {
+        const headers: Record<string, string> = {};
+        const token = getActiveAuthToken();
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        const res = await fetch(
+          `/api/github/branches?owner=${encodeURIComponent(owner)}&repo=${encodeURIComponent(repo)}`,
+          { headers }
+        );
+        if (!res.ok) return;
+        const json = (await res.json()) as { branches?: string[] };
+        if (Array.isArray(json.branches)) {
+          setBranches(json.branches);
+        }
+      } catch {
+        // Non-fatal
       }
-      setStatus(
-        `Loaded ${result.path} (${result.sections.length} section${result.sections.length === 1 ? '' : 's'})`,
-        'info'
-      );
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to load GitHub Markdown';
-      setDocError(msg);
-      setStatus(msg, 'error');
-    } finally {
-      setIsLoadingDoc(false);
-    }
-  }, [githubUrl, fetchDocPayload, setStatus]);
+    },
+    [getActiveAuthToken]
+  );
+
+  const loadDoc = useCallback(
+    async (overrideUrl?: string, branchOverride?: string) => {
+      const trimmed = (overrideUrl ?? githubUrl).trim();
+      if (!trimmed) {
+        setDocError('Paste a GitHub Markdown (.md) URL first.');
+        return;
+      }
+      setIsLoadingDoc(true);
+      setDocError(null);
+      try {
+        const result = await fetchDocPayload(trimmed, undefined, branchOverride);
+        if ('unchanged' in result) return;
+        setDocData(result);
+        if (branchOverride) {
+          setGithubUrl(result.canonicalUrl);
+        }
+        void fetchBranches(result.owner, result.repo);
+        if (result.lineRange && result.lineRangeMarkdown !== null) {
+          setSelectedSectionId(`L${result.lineRange.start}-L${result.lineRange.end}`);
+        } else if (result.sections.length > 0) {
+          setSelectedSectionId(result.sections[0].id);
+        } else {
+          setSelectedSectionId('*');
+        }
+        setStatus(
+          `Loaded ${result.path} (${result.branch} · ${result.sections.length} section${result.sections.length === 1 ? '' : 's'})`,
+          'info'
+        );
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Failed to load GitHub Markdown';
+        setDocError(msg);
+        setStatus(msg, 'error');
+      } finally {
+        setIsLoadingDoc(false);
+      }
+    },
+    [githubUrl, fetchDocPayload, fetchBranches, setStatus]
+  );
+
+  const switchBranch = useCallback(
+    async (nextBranch: string) => {
+      if (!docData || !nextBranch || nextBranch === docData.branch) return;
+      await loadDoc(docData.canonicalUrl, nextBranch);
+    },
+    [docData, loadDoc]
+  );
 
   const placeAsText = useCallback(async () => {
     if (!docData) return;
@@ -334,21 +377,38 @@ export function useFigJamGitHubDocs(
     [setStatus]
   );
 
+  const retargetGitHubBranch = useCallback(
+    async (widgetIds: string[], nextUrl: string, nextBranch: string) => {
+      if (widgetIds.length === 0 || !nextUrl) return;
+      postToPlugin({
+        action: 'figjam-set-meta',
+        nodeIds: widgetIds,
+        githubUrl: nextUrl,
+        githubBranch: nextBranch,
+      });
+      setStatus(`Branch set to "${nextBranch}" — click Sync Selected to update`, 'info');
+    },
+    [setStatus]
+  );
+
   return {
     githubUrl,
     setGithubUrl,
     githubPat,
     setGithubPat,
     docData,
+    branches,
     selectedSectionId,
     setSelectedSectionId,
     isLoadingDoc,
     isSyncingDocs,
     docError,
     loadDoc,
+    switchBranch,
     placeAsText,
     bindSelectedWidgets,
     syncGitHubItems,
     retargetGitHubSection,
+    retargetGitHubBranch,
   };
 }

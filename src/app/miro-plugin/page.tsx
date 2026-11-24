@@ -403,6 +403,44 @@ export default function MiroPluginPage() {
     }
   };
 
+  const handleGitHubBranchChange = async (
+    itemIds: string[],
+    nextUrl: string,
+    nextBranch: string
+  ): Promise<void> => {
+    if (typeof window === 'undefined') return;
+    const miro = window.miro;
+    if (!miro) return;
+
+    try {
+      const selection = await miro.board.getSelection();
+      for (const itemId of itemIds) {
+        const widget = selection.find((w) => w.id === itemId);
+        if (!widget) continue;
+        const metadata = (await widget.getMetadata()) as Record<string, unknown> | undefined;
+        const syncData = metadata?.syncingboard as Record<string, unknown> | undefined;
+        if (!syncData || syncData.platform !== 'github') continue;
+
+        await widget.setMetadata('syncingboard', {
+          ...syncData,
+          url: nextUrl,
+          branch: nextBranch,
+          contentHash: '',
+          etag: null,
+        });
+        await widget.sync();
+      }
+
+      setSelectedItems((prev) =>
+        prev.map((item) =>
+          itemIds.includes(item.id) ? { ...item, fileKey: nextUrl, etag: undefined } : item
+        )
+      );
+    } catch (err) {
+      console.error('Failed to update GitHub branch metadata:', err);
+    }
+  };
+
   const handleGroupSettingChange = async (
     itemIds: string[],
     key: 'format' | 'scale',
@@ -534,6 +572,7 @@ export default function MiroPluginPage() {
             onSync={syncSelectedScreens}
             onGroupSettingChange={handleGroupSettingChange}
             onGitHubSectionChange={handleGitHubSectionChange}
+            onGitHubBranchChange={handleGitHubBranchChange}
             onRefreshNodeName={handleRefreshNodeName}
             onRemoveGroup={handleDeselectGroup}
             availableScales={AVAILABLE_SCALES}

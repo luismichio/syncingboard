@@ -542,7 +542,10 @@
             <a id="docs-selected-open-btn" href="#" target="_blank" rel="noopener noreferrer" class="btn-clear" style="font-size: 8px; padding: 1px 5px; text-decoration: none; display: inline-flex; align-items: center;" title="Open GitHub file">OPEN</a>
             <button id="docs-selected-copy-btn" type="button" class="btn-clear" style="font-size: 8px; padding: 1px 5px;" title="Copy GitHub URL">COPY</button>
           </div>
-          <select id="docs-selected-section" style="width: 100%; font-size: 10px; background: var(--bg-page); border: 1px solid var(--border-card); border-radius: 4px; padding: 5px 6px; color: var(--text-page);"></select>
+          <div style="display: flex; gap: 4px;">
+            <select id="docs-selected-branch" title="Select branch" style="width: 82px; font-size: 9px; font-family: monospace; color: var(--accent); background: var(--bg-page); border: 1px solid var(--border-card); border-radius: 4px; padding: 5px 4px;"></select>
+            <select id="docs-selected-section" style="flex: 1; min-width: 0; font-size: 10px; background: var(--bg-page); border: 1px solid var(--border-card); border-radius: 4px; padding: 5px 6px; color: var(--text-page);"></select>
+          </div>
           <button id="docs-sync-selected-btn" class="btn-target-connect" type="button" style="width: 100%;">SYNC SELECTED</button>
         </div>
       </div>
@@ -555,7 +558,10 @@
         </div>
         <input type="password" id="docs-github-pat" placeholder="Optional GitHub PAT (or connect in Settings)" style="width: 100%; box-sizing: border-box; font-size: 10px; font-family: monospace; background: var(--bg-page); border: 1px solid var(--border-card); border-radius: 4px; padding: 5px 8px; color: var(--text-page);" />
         <div id="docs-section-wrap" style="display: none; flex-direction: column; gap: 6px;">
-          <select id="docs-section-select" style="width: 100%; font-size: 10px; background: var(--bg-page); border: 1px solid var(--border-card); border-radius: 4px; padding: 6px 8px; color: var(--text-page);"></select>
+          <div style="display: flex; gap: 4px;">
+            <select id="docs-branch-select" title="Select branch" style="width: 82px; font-size: 9px; font-family: monospace; color: var(--accent); background: var(--bg-page); border: 1px solid var(--border-card); border-radius: 4px; padding: 5px 4px;"></select>
+            <select id="docs-section-select" style="flex: 1; min-width: 0; font-size: 10px; background: var(--bg-page); border: 1px solid var(--border-card); border-radius: 4px; padding: 6px 8px; color: var(--text-page);"></select>
+          </div>
           <div style="display: flex; gap: 6px;">
             <button id="docs-place-btn" class="btn-target-connect" type="button" style="flex: 1;">PLACE TEXT</button>
             <button id="docs-bind-btn" class="btn-target-connect" type="button" style="flex: 1;">BIND SELECTED</button>

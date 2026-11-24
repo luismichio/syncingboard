@@ -76,6 +76,7 @@ export function useGitHubDocsImporter(
   const [githubUrl, setGithubUrl] = useState<string>('');
   const [githubPat, setGithubPat] = useState<string>('');
   const [docData, setDocData] = useState<GitHubDocPayload | null>(null);
+  const [branches, setBranches] = useState<string[]>([]);
   const [selectedSectionId, setSelectedSectionId] = useState<string>('*');
   const [isLoadingDoc, setIsLoadingDoc] = useState<boolean>(false);
   const [isSyncingDocs, setIsSyncingDocs] = useState<boolean>(false);
@@ -107,7 +108,11 @@ export function useGitHubDocsImporter(
   }, []);
 
   const fetchDocByUrl = useCallback(
-    async (rawUrl: string, etag?: string | null): Promise<{ status: number; data: GitHubDocPayload | null; error?: string }> => {
+    async (
+      rawUrl: string,
+      etag?: string | null,
+      branchOverride?: string
+    ): Promise<{ status: number; data: GitHubDocPayload | null; error?: string }> => {
       const headers: Record<string, string> = {};
       const effectiveToken = githubOAuthToken?.trim() || githubPat.trim();
       if (effectiveToken) {
@@ -116,7 +121,8 @@ export function useGitHubDocsImporter(
       if (etag) {
         headers['If-None-Match'] = etag;
       }
-      const res = await fetch(`/api/github/markdown?url=${encodeURIComponent(rawUrl.trim())}`, {
+      const branchQuery = branchOverride ? `&branch=${encodeURIComponent(branchOverride)}` : '';
+      const res = await fetch(`/api/github/markdown?url=${encodeURIComponent(rawUrl.trim())}${branchQuery}`, {
         method: 'GET',
         headers,
         cache: 'no-store',
@@ -134,20 +140,46 @@ export function useGitHubDocsImporter(
     [githubOAuthToken, githubPat]
   );
 
+  const fetchBranchesForRepo = useCallback(
+    async (owner: string, repo: string) => {
+      try {
+        const headers: Record<string, string> = {};
+        const effectiveToken = githubOAuthToken?.trim() || githubPat.trim();
+        if (effectiveToken) headers.Authorization = `Bearer ${effectiveToken}`;
+        const res = await fetch(
+          `/api/github/branches?owner=${encodeURIComponent(owner)}&repo=${encodeURIComponent(repo)}`,
+          { headers, cache: 'no-store' }
+        );
+        if (!res.ok) return;
+        const json = (await res.json()) as { branches?: string[] };
+        if (Array.isArray(json.branches)) {
+          setBranches(json.branches);
+        }
+      } catch {
+        // Non-fatal: branch list is optional
+      }
+    },
+    [githubOAuthToken, githubPat]
+  );
+
   const loadGitHubDoc = useCallback(
-    async (overrideUrl?: string) => {
+    async (overrideUrl?: string, branchOverride?: string) => {
       const targetUrl = (overrideUrl ?? githubUrl).trim();
       if (!targetUrl) return;
       setIsLoadingDoc(true);
       setDocError(null);
       try {
-        const result = await fetchDocByUrl(targetUrl);
+        const result = await fetchDocByUrl(targetUrl, null, branchOverride);
         if (!result.data) {
           setDocError(result.error || 'Failed to load Markdown file from GitHub.');
           setDocData(null);
           return;
         }
         setDocData(result.data);
+        if (branchOverride) {
+          setGithubUrl(result.data.canonicalUrl);
+        }
+        void fetchBranchesForRepo(result.data.owner, result.data.repo);
         if (result.data.lineRange && result.data.lineRangeMarkdown !== null) {
           setSelectedSectionId(`L${result.data.lineRange.start}-L${result.data.lineRange.end}`);
         } else if (
@@ -161,7 +193,7 @@ export function useGitHubDocsImporter(
           setSelectedSectionId('*');
         }
         setSyncStatusParent(
-          `Loaded ${result.data.path} (${result.data.sections.length} section${result.data.sections.length === 1 ? '' : 's'})`,
+          `Loaded ${result.data.path} (${result.data.branch} · ${result.data.sections.length} section${result.data.sections.length === 1 ? '' : 's'})`,
           'info'
         );
       } catch (err: unknown) {
@@ -171,7 +203,15 @@ export function useGitHubDocsImporter(
         setIsLoadingDoc(false);
       }
     },
-    [fetchDocByUrl, githubUrl, setSyncStatusParent]
+    [fetchDocByUrl, fetchBranchesForRepo, githubUrl, setSyncStatusParent]
+  );
+
+  const switchBranch = useCallback(
+    async (nextBranch: string) => {
+      if (!docData || !nextBranch || nextBranch === docData.branch) return;
+      await loadGitHubDoc(docData.canonicalUrl, nextBranch);
+    },
+    [docData, loadGitHubDoc]
   );
 
   const resolveSelectedMarkdown = useCallback(
@@ -388,12 +428,14 @@ export function useGitHubDocsImporter(
     githubPat,
     updateGithubPat,
     docData,
+    branches,
     selectedSectionId,
     setSelectedSectionId,
     isLoadingDoc,
     isSyncingDocs,
     docError,
     loadGitHubDoc,
+    switchBranch,
     placeTextOnBoard,
     bindSelectedTextWidget,
     syncSelectedGitHubDocs,
