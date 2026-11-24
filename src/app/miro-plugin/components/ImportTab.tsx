@@ -4,6 +4,25 @@ import { PenpotNodeInfo } from '../usePenpotImporter';
 import { ImportPlatform } from '../types';
 import { FormatScaleSelector } from './FormatScaleSelector';
 import { RelayStatusBanner } from './RelayStatusBanner';
+import { GitHubDocsImportPanel } from './GitHubDocsImportPanel';
+import type { GitHubDocPayload } from '../useGitHubDocsImporter';
+
+export interface GitHubDocsProps {
+  githubUrl: string;
+  setGithubUrl: (url: string) => void;
+  githubPat: string;
+  updateGithubPat: (pat: string) => void;
+  docData: GitHubDocPayload | null;
+  selectedSectionId: string;
+  setSelectedSectionId: (id: string) => void;
+  isLoadingDoc: boolean;
+  isSyncingDocs: boolean;
+  docError: string | null;
+  loadGitHubDoc: () => Promise<void>;
+  placeTextOnBoard: () => Promise<void>;
+  bindSelectedTextWidget: () => Promise<void>;
+  syncSelectedGitHubDocs: () => Promise<void>;
+}
 
 interface ImportTabProps {
   importPlatform: ImportPlatform;
@@ -52,6 +71,7 @@ figmaConnected?: boolean;
   ) => Promise<void>;
   onClearFigmaNodeInfo?: () => void;
   onClearPenpotNodeInfo?: () => void;
+  githubDocs?: GitHubDocsProps;
 }
 
 export function ImportTab({
@@ -88,15 +108,18 @@ figmaConnected,
   replaceSelectedWidget,
   onClearFigmaNodeInfo,
   onClearPenpotNodeInfo,
+  githubDocs,
 }: ImportTabProps) {
   return (
     <div className="flex-grow flex flex-col gap-4">
-      <RelayStatusBanner
-        userIdHash={relayUserIdHash}
-        boardId={relayBoardId}
-        useTauri={Boolean(useTauri) && importPlatform !== 'penpot'}
-        figmaConnected={figmaConnected}
-      />
+      {importPlatform !== 'github' && (
+        <RelayStatusBanner
+          userIdHash={relayUserIdHash}
+          boardId={relayBoardId}
+          useTauri={Boolean(useTauri) && importPlatform !== 'penpot'}
+          figmaConnected={figmaConnected}
+        />
+      )}
       {mirrorMode && onResetCache ? (
         <button
           onClick={onResetCache}
@@ -128,6 +151,18 @@ figmaConnected,
         >
           PENPOT
         </button>
+        {githubDocs && (
+          <button
+            onClick={() => setImportPlatform('github')}
+            className={`flex-1 text-center font-mono py-1 text-[10px] font-bold rounded transition ${
+              importPlatform === 'github'
+                ? 'bg-accent text-bg-page'
+                : 'text-text-muted hover:text-text-page'
+            }`}
+          >
+            DOCS
+          </button>
+        )}
       </div>
 
       {importPlatform === 'figma' && (
@@ -369,6 +404,24 @@ figmaConnected,
                           </div>
           )}
         </div>
+      )}
+
+      {importPlatform === 'github' && githubDocs && (
+        <GitHubDocsImportPanel
+          githubUrl={githubDocs.githubUrl}
+          onGithubUrlChange={githubDocs.setGithubUrl}
+          githubPat={githubDocs.githubPat}
+          onGithubPatChange={githubDocs.updateGithubPat}
+          docData={githubDocs.docData}
+          selectedSectionId={githubDocs.selectedSectionId}
+          onSelectedSectionChange={githubDocs.setSelectedSectionId}
+          isLoadingDoc={githubDocs.isLoadingDoc}
+          isSyncingDocs={githubDocs.isSyncingDocs}
+          docError={githubDocs.docError}
+          onLoadDoc={githubDocs.loadGitHubDoc}
+          onPlaceText={githubDocs.placeTextOnBoard}
+          onBindSelected={githubDocs.bindSelectedTextWidget}
+        />
       )}
         </>
       ) : (

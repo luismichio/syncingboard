@@ -1,3 +1,10 @@
+# Task: GitHub Docs-as-Code Text Sync (Phases 1 & 2 — Shared Core + Miro MVP)
+- [x] Phase 1: `src/lib/sync/markdownParser.ts`, `src/lib/sync/markdownCompiler.ts`, `GET /api/github/markdown` (SSRF-guarded, ETag `304`, optional PAT), and unit tests (`markdownParser.test.ts`, `markdownCompiler.test.ts`).
+- [x] Phase 2: `useGitHubDocsImporter.ts`, `GitHubDocsImportPanel.tsx`, `Import → DOCS` sub-tab in Miro (Place Text, Bind Selected, Sync Selected Docs in-place via Miro SDK v2).
+- [x] Verification: `yarn lint`, `yarn test`, and `yarn build`.
+
+---
+
 # Task: Zero-Cloud Local Figma ↔ Miro Pipeline (Parts A & B)
 - [x] Phase 1 (Part A): Local `POST /miro/update-image` in `tauri-bridge/src-tauri/src/lib.rs` (50 MB limit, `reqwest` multipart, `preserveSize` geometry restore + `Retry-After`, Rust unit tests).
 - [x] Phase 2 (Part A): `updateMiroImageViaTauri` in `tauriBridgeClient.ts`, hybrid split batch limits (`src/lib/sync/batchLimits.ts` + tests: 50 local Figma / 3 Penpot / 3 Cloud), wired into `SyncTab.tsx`, `useMiroSync.ts`, `useFigmaImporter.ts`.

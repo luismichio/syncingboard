@@ -27,9 +27,13 @@ function buildGroupedItems(selectedItems: SyncedImage[]): GroupedSyncedImage[] {
     if (!groups[key]) {
       const platform = item.platform || 'figma';
       const sourceUrl =
-        platform === 'figma' && item.fileKey && item.nodeId
-          ? `https://www.figma.com/file/${item.fileKey}/?node-id=${encodeURIComponent(item.nodeId)}`
-          : undefined;
+        platform === 'github'
+          ? item.nodeId && item.nodeId !== '*'
+            ? `${item.fileKey}#${encodeURIComponent(item.nodeId)}`
+            : item.fileKey
+          : platform === 'figma' && item.fileKey && item.nodeId
+            ? `https://www.figma.com/file/${item.fileKey}/?node-id=${encodeURIComponent(item.nodeId)}`
+            : undefined;
       groups[key] = {
         key,
         fileKey: item.fileKey,
@@ -60,6 +64,7 @@ export default function MiroPluginPage() {
     isInitMode,
     figmaToken,
     miroToken,
+    githubToken,
     tokensLoading,
     selectedItems,
     setSelectedItems,
@@ -71,8 +76,10 @@ export default function MiroPluginPage() {
     isDetectingLocal,
     connectFigma,
     connectMiro,
+    connectGithub,
     disconnectFigma,
     disconnectMiro,
+    disconnectGithub,
     parseFigmaLink,
     detectLocalFigmaSelection,
     applyLiveFigmaSelection,
@@ -87,6 +94,7 @@ export default function MiroPluginPage() {
   cooldownSeconds,
   isAnyImageSelected,
     replaceSelectedWidget,
+    githubDocs,
   } = useMiroPlugin(propagate, preserveSize);
 
   const [activeTab, setActiveTab] = useState<MiroPluginTab>('sync');
@@ -355,6 +363,46 @@ export default function MiroPluginPage() {
 
   const groupedItems = useMemo(() => buildGroupedItems(selectedItems), [selectedItems]);
 
+  const handleGitHubSectionChange = async (
+    itemIds: string[],
+    sectionId: string,
+    sectionTitle: string
+  ): Promise<void> => {
+    if (typeof window === 'undefined') return;
+    const miro = window.miro;
+    if (!miro) return;
+
+    try {
+      const selection = await miro.board.getSelection();
+      for (const itemId of itemIds) {
+        const widget = selection.find((w) => w.id === itemId);
+        if (!widget) continue;
+        const metadata = (await widget.getMetadata()) as Record<string, unknown> | undefined;
+        const syncData = metadata?.syncingboard as Record<string, unknown> | undefined;
+        if (!syncData || syncData.platform !== 'github') continue;
+
+        await widget.setMetadata('syncingboard', {
+          ...syncData,
+          sectionId,
+          sectionTitle,
+          contentHash: '',
+          etag: null,
+        });
+        await widget.sync();
+      }
+
+      setSelectedItems((prev) =>
+        prev.map((item) =>
+          itemIds.includes(item.id)
+            ? { ...item, nodeId: sectionId, nodeName: sectionTitle, title: sectionTitle }
+            : item
+        )
+      );
+    } catch (err) {
+      console.error('Failed to update GitHub section metadata:', err);
+    }
+  };
+
   const handleGroupSettingChange = async (
     itemIds: string[],
     key: 'format' | 'scale',
@@ -485,6 +533,7 @@ export default function MiroPluginPage() {
           hasMiroToken={!!miroToken}
             onSync={syncSelectedScreens}
             onGroupSettingChange={handleGroupSettingChange}
+            onGitHubSectionChange={handleGitHubSectionChange}
             onRefreshNodeName={handleRefreshNodeName}
             onRemoveGroup={handleDeselectGroup}
             availableScales={AVAILABLE_SCALES}
@@ -522,6 +571,7 @@ export default function MiroPluginPage() {
             detectLocalPenpotSelection={detectLocalPenpotSelection}
             importPenpotScreen={importPenpotScreen}
             replaceSelectedWidget={replaceSelectedWidget}
+            githubDocs={githubDocs}
           />
         )}
 
@@ -530,10 +580,13 @@ export default function MiroPluginPage() {
             tokensLoading={tokensLoading}
             figmaToken={figmaToken}
             miroToken={miroToken}
+            githubToken={githubToken}
             connectFigma={connectFigma}
             connectMiro={connectMiro}
+            connectGithub={connectGithub}
             disconnectFigma={disconnectFigma}
             disconnectMiro={disconnectMiro}
+            disconnectGithub={disconnectGithub}
             copiedPairing={copiedPairing}
             pairingId={pairingId}
             copyPairingId={copyPairingId}

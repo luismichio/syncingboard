@@ -75,7 +75,7 @@ graph TD
   agents["AI Agents / Automation<br/>(Claude Desktop, Cursor, pi, scripts)"]
   subgraph engine["SyncingBoard Core Engine"]
     direction LR
-    sa["Source Adapters<br/>(Figma / Penpot / etc.)"]
+    sa["Source Adapters<br/>(Figma / Penpot / GitHub Docs)"]
     ta["Target Adapters<br/>(Miro / Mural / etc.)"]
     mcp["MCP Client (Planned)"]
     lovable["Lovable<br/>MCP HTTP"]

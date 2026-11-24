@@ -131,6 +131,25 @@ If the Penpot Companion plugin shows "offline" in the Miro plugin:
 
 ---
 
+## Source Adapter: GitHub Docs-as-Code (Optional — Private Repos)
+
+Public GitHub Markdown files work out of the box with zero configuration. To let users sync **private** GitHub repositories via one-click **Connect GitHub** in Settings, create a GitHub App (recommended) or OAuth App:
+
+### Register GitHub App (Recommended — Read-Only)
+1. Go to **GitHub → Settings → Developer settings → GitHub Apps → New GitHub App**.
+2. Set **Callback URL** (under *Identifying and authorizing users*) to:
+   ```
+   https://your-domain.vercel.app/api/oauth/github/callback
+   ```
+   *(You can also add `http://localhost:3000/api/oauth/github/callback` for local development.)*
+3. Uncheck **Webhook → Active**.
+4. Under **Repository permissions**, set **Contents** to **Read-only**.
+5. Select **Any account** under *Where can this GitHub App be installed?* and click **Create GitHub App**.
+6. Copy the **Client ID** (`GITHUB_CLIENT_ID`) and click **Generate a new client secret** (`GITHUB_CLIENT_SECRET`).
+7. Set `GITHUB_OAUTH_SCOPE=` (empty) so GitHub uses the fine-grained read-only permission. *(If you use a classic GitHub OAuth App instead, omit `GITHUB_OAUTH_SCOPE` so it defaults to `repo`.)*
+
+---
+
 ## Common Cloud Services: Upstash & Ably (Self-Hosters Only)
 
 These cloud accounts are required to run the real-time relays and enforce persistent rate limits. Setup these accounts before deploying to Vercel:
@@ -185,6 +204,9 @@ Vercel is the simplest deployment path --- one-click deploy with zero server man
    | `MIRO_CLIENT_SECRET` | **Both** | From Miro Developer App |
    | `FIGMA_CLIENT_ID` | **Figma only** | From Figma Developer App |
    | `FIGMA_CLIENT_SECRET` | **Figma only** | From Figma Developer App |
+   | `GITHUB_CLIENT_ID` | **GitHub private repos (optional)** | From GitHub App / OAuth App |
+   | `GITHUB_CLIENT_SECRET` | **GitHub private repos (optional)** | From GitHub App / OAuth App |
+   | `GITHUB_OAUTH_SCOPE` | **GitHub private repos (optional)** | Leave blank for GitHub App (`Contents: Read-only`); defaults to `repo` for OAuth Apps |
    | `UPSTASH_REDIS_REST_URL` | **Penpot only** | From Upstash Console (used for Penpot image relay) |
    | `UPSTASH_REDIS_REST_TOKEN` | **Penpot only** | From Upstash Console (used for Penpot image relay) |
    | `ABLY_API_KEY` | **Figma (selection relay) & Penpot** | From Ably Console (WebSocket broker) |

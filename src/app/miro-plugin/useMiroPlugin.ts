@@ -3,6 +3,7 @@ import { useAuthTokens } from './useAuthTokens';
 import { useMiroSelection } from './useMiroSelection';
 import { useFigmaImporter } from './useFigmaImporter';
 import { usePenpotImporter } from './usePenpotImporter';
+import { useGitHubDocsImporter } from './useGitHubDocsImporter';
 import { useMiroSync } from './useMiroSync';
 import { getValidToken } from '@/lib/tokens';
 import { trackEvent } from '@/lib/analytics';
@@ -53,10 +54,13 @@ export function useMiroPlugin(propagate: boolean = false, preserveSize: boolean 
   const {
     figmaToken,
     miroToken,
+    githubToken,
     connectFigma,
     connectMiro,
+    connectGithub,
     disconnectFigma,
     disconnectMiro,
+    disconnectGithub,
     tokensLoading,
   } = useAuthTokens(isInitMode);
 
@@ -120,6 +124,9 @@ export function useMiroPlugin(propagate: boolean = false, preserveSize: boolean 
     detectLocalPenpotSelection,
     importPenpotScreen,
   } = usePenpotImporter(miroToken, setIsSyncing, updateSyncStatus);
+
+  // 4b. GitHub Docs-as-Code Importer Hook
+  const githubDocs = useGitHubDocsImporter(updateSyncStatus, githubToken);
 
   // 5. Board Sync Hook
   const {
@@ -309,6 +316,7 @@ export function useMiroPlugin(propagate: boolean = false, preserveSize: boolean 
     isInitMode,
     figmaToken,
     miroToken,
+    githubToken,
     tokensLoading,
     selectedItems,
     rawSelectedItems,
@@ -323,8 +331,10 @@ export function useMiroPlugin(propagate: boolean = false, preserveSize: boolean 
     isDetectingLocal,
     connectFigma,
     connectMiro,
+    connectGithub,
     disconnectFigma,
     disconnectMiro,
+    disconnectGithub,
     parseFigmaLink,
     detectLocalFigmaSelection,
     applyLiveFigmaSelection,
@@ -343,5 +353,7 @@ export function useMiroPlugin(propagate: boolean = false, preserveSize: boolean 
     isAnyImageSelected,
     // Replace / Adopt
     replaceSelectedWidget,
+    // GitHub Docs-as-Code
+    githubDocs,
   };
 }

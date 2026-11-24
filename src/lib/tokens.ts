@@ -31,7 +31,10 @@ const FP = deploymentFingerprint();
 const STORAGE_KEYS = {
   figma: `figma_tokens${FP}`,
   miro: `miro_tokens${FP}`,
+  github: `github_tokens${FP}`,
 };
+
+export type TokenPlatform = 'figma' | 'miro' | 'github';
 
 const MIRO_STORAGE_TIMEOUT_MS = 1500;
 const REFRESH_TIMEOUT_MS = 15000;
@@ -100,7 +103,7 @@ function parseTokenData(raw: string): TokenData | null {
  * Saves token data — always writes to localStorage (fast local cache) and
  * also attempts Miro board storage (survives browser cache clears).
  */
-export async function saveToken(platform: 'figma' | 'miro', data: TokenData): Promise<void> {
+export async function saveToken(platform: TokenPlatform, data: TokenData): Promise<void> {
   if (typeof window === 'undefined') return;
 
   // Always write to localStorage as a local cache — this is the fast path
@@ -131,7 +134,7 @@ export async function saveToken(platform: 'figma' | 'miro', data: TokenData): Pr
  * Reads token data — checks localStorage first (instant, works immediately on
  * iframe reload), falls back to Miro board storage (survives cache clears).
  */
-export async function getToken(platform: 'figma' | 'miro'): Promise<TokenData | null> {
+export async function getToken(platform: TokenPlatform): Promise<TokenData | null> {
   if (typeof window === 'undefined') return null;
 
   // 1. Read from localStorage first — this is the fast path on iframe reload.
@@ -175,7 +178,7 @@ export async function getToken(platform: 'figma' | 'miro'): Promise<TokenData | 
 /**
  * Clears token data from both localStorage and Miro board storage.
  */
-export async function clearToken(platform: 'figma' | 'miro'): Promise<void> {
+export async function clearToken(platform: TokenPlatform): Promise<void> {
   if (typeof window === 'undefined') return;
 
   // Always clear localStorage first.
@@ -219,7 +222,7 @@ export function isTokenExpiring(tokenData: TokenData | null): boolean {
  * will retry the refresh. The only way tokens are cleared is via explicit
  * user action (Disconnect button).
  */
-export async function getValidToken(platform: 'figma' | 'miro'): Promise<string | null> {
+export async function getValidToken(platform: TokenPlatform): Promise<string | null> {
   const tokenData = await getToken(platform);
   if (!tokenData) {
     return null;

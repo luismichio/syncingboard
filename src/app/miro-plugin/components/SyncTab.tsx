@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { decodeHtmlEntities } from '@/lib/decodeHtmlEntities';
 import { formatDuration } from '@/lib/formatDuration';
 import { evaluateBatchLimits } from '@/lib/sync/batchLimits';
+import { getValidToken } from '@/lib/tokens';
 import { GroupedSyncedImage } from '../types';
 
 interface SyncTabProps {
@@ -18,6 +19,7 @@ interface SyncTabProps {
   hasMiroToken: boolean;
   onSync: () => void;
   onGroupSettingChange: (itemIds: string[], key: 'format' | 'scale', value: unknown) => void;
+  onGitHubSectionChange?: (itemIds: string[], sectionId: string, sectionTitle: string) => Promise<void> | void;
   onRefreshNodeName?: (fileKey: string, nodeId: string, platform: 'figma' | 'penpot') => void;
   onRemoveGroup?: (groupKey: string, itemIds: string[]) => void;
   availableScales: number[];
@@ -42,6 +44,7 @@ export function SyncTab({
   hasMiroToken,
   onSync,
   onGroupSettingChange,
+  onGitHubSectionChange,
   onRefreshNodeName,
   onRemoveGroup,
   availableScales,
@@ -49,6 +52,54 @@ export function SyncTab({
   useTauri = false,
 }: SyncTabProps) {
   const [copiedNodeId, setCopiedNodeId] = useState<string | null>(null);
+  const [sectionsByUrl, setSectionsByUrl] = useState<
+    Record<string, { id: string; title: string; level: number }[]>
+  >({});
+  const fetchedUrlsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    const githubUrls = [
+      ...new Set(
+        groupedItems
+          .filter((g) => g.platform === 'github' && g.fileKey)
+          .map((g) => g.fileKey)
+      ),
+    ];
+    for (const url of githubUrls) {
+      if (fetchedUrlsRef.current.has(url)) continue;
+      fetchedUrlsRef.current.add(url);
+      void (async () => {
+        try {
+          const headers: Record<string, string> = {};
+          const oauthTok = await getValidToken('github');
+          let pat = '';
+          try {
+            pat = window.localStorage.getItem('syncingboard_github_pat')?.trim() || '';
+          } catch {
+            // ignore storage errors
+          }
+          const tok = oauthTok?.trim() || pat;
+          if (tok) headers.Authorization = `Bearer ${tok}`;
+
+          const res = await fetch(`/api/github/markdown?url=${encodeURIComponent(url)}`, {
+            method: 'GET',
+            headers,
+            cache: 'no-store',
+          });
+          if (!res.ok) return;
+          const data = (await res.json()) as {
+            sections?: { id: string; title: string; level: number }[];
+          };
+          if (Array.isArray(data.sections)) {
+            setSectionsByUrl((prev) => ({ ...prev, [url]: data.sections || [] }));
+          }
+        } catch {
+          fetchedUrlsRef.current.delete(url);
+        }
+      })();
+    }
+  }, [groupedItems]);
+
   const batchCheck = evaluateBatchLimits(groupedItems, Boolean(useTauri));
   return (
     <div className="flex-grow flex flex-col justify-between">
@@ -74,7 +125,7 @@ export function SyncTab({
                 >
                   <div className="absolute top-2 right-2 flex items-center gap-1.5">
                     <span className="text-[8px] font-mono font-bold uppercase tracking-wider text-accent border border-accent/40 bg-transparent px-1.5 py-0.5 rounded">
-                      {group.platform === 'penpot' ? 'Penpot' : 'Figma'}
+                      {group.platform === 'penpot' ? 'Penpot' : group.platform === 'github' ? 'GitHub' : 'Figma'}
                     </span>
 
                     {group.widgets.length > 1 && (
@@ -105,9 +156,9 @@ export function SyncTab({
                       <span className="text-xs font-semibold text-text-page truncate">
                         {decodeHtmlEntities(group.nodeName)}
                       </span>
-                      {onRefreshNodeName && (
+                      {onRefreshNodeName && group.platform !== 'github' && (
                         <button
-                          onClick={() => onRefreshNodeName(group.fileKey, group.nodeId, group.platform)}
+                          onClick={() => onRefreshNodeName(group.fileKey, group.nodeId, group.platform as 'figma' | 'penpot')}
                           disabled={isSyncing}
                           className="shrink-0 p-0.5 text-text-muted hover:text-accent transition-colors disabled:opacity-40 cursor-pointer"
                           title="Refresh frame name from source"
@@ -125,9 +176,11 @@ export function SyncTab({
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-[9px] font-mono text-text-muted hover:text-accent truncate cursor-pointer"
-                          title={`Open in source app — ${group.url}`}
+                          title={`Open in source — ${group.url}`}
                         >
-                          ID: {group.nodeId} ↗
+                          {group.platform === 'github'
+                            ? `${group.nodeId === '*' ? 'Full doc' : `#${group.nodeId}`} ↗`
+                            : `ID: ${group.nodeId} ↗`}
                         </a>
                       ) : (
                         <span className="text-[9px] font-mono text-text-muted truncate">
@@ -158,6 +211,46 @@ export function SyncTab({
                     </div>
                   </div>
 
+                  {group.platform === 'github' ? (
+                  <div className="flex gap-2 mt-1 pt-2 border-t border-border-card/30">
+                    <div className="flex-1 flex flex-col gap-0.5">
+                      <span className="text-[8px] font-mono text-text-muted uppercase tracking-wider">Section</span>
+                      <select
+                        value={group.nodeId}
+                        disabled={isSyncing || !onGitHubSectionChange}
+                        onChange={(e) => {
+                          if (!onGitHubSectionChange) return;
+                          const nextId = e.target.value;
+                          const list = sectionsByUrl[group.fileKey] || [];
+                          const found = list.find((s) => s.id === nextId);
+                          const nextTitle =
+                            nextId === '*'
+                              ? group.fileKey.split('/').pop() || 'Full Document'
+                              : found?.title || nextId;
+                          void onGitHubSectionChange(
+                            group.widgets.map((w) => w.id),
+                            nextId,
+                            nextTitle
+                          );
+                        }}
+                        className="bg-bg-page border border-border-card text-[10px] font-mono rounded px-1.5 py-0.5 focus:outline-none focus:border-accent text-text-page w-full cursor-pointer disabled:opacity-50"
+                      >
+                        <option value="*">Full Document</option>
+                        {!(sectionsByUrl[group.fileKey] || []).some((s) => s.id === group.nodeId) &&
+                          group.nodeId !== '*' && (
+                            <option value={group.nodeId}>
+                              {group.nodeName} (#{group.nodeId})
+                            </option>
+                          )}
+                        {(sectionsByUrl[group.fileKey] || []).map((sec) => (
+                          <option key={sec.id} value={sec.id}>
+                            {'#'.repeat(sec.level)} {sec.title}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  ) : (
                   <div className="flex gap-2 mt-1 pt-2 border-t border-border-card/30">
                     {!mirrorMode && (
                     <div className="flex-1 flex flex-col gap-0.5">
@@ -188,6 +281,7 @@ export function SyncTab({
                       </div>
                     )}
                   </div>
+                  )}
                 </div>
               ))}
             </div>

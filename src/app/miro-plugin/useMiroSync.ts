@@ -3,6 +3,8 @@ import { SyncedImage } from './useMiroSelection';
 import { callPenpotMcpTool, broadcastSyncActivity, exportFigmaNodeLocally } from '@/lib/sync/companionRelayClient';
 import { updateMiroImageViaTauri } from '@/lib/sync/tauriBridgeClient';
 import { evaluateBatchLimits } from '@/lib/sync/batchLimits';
+import { compileToMiroHtml } from '@/lib/sync/markdownCompiler';
+import type { GitHubDocPayload } from './useGitHubDocsImporter';
 import { getValidToken } from '@/lib/tokens';
 import { trackEvent } from '@/lib/analytics';
 import { decodeHtmlEntities } from '@/lib/decodeHtmlEntities';
@@ -119,7 +121,7 @@ return;
         width?: number;
         format?: 'png' | 'svg';
         scale?: number;
-        platform?: 'figma' | 'penpot';
+        platform?: 'figma' | 'penpot' | 'github';
       };
 
 
@@ -135,6 +137,16 @@ return;
         // the 10/min Miro image-update window.
         const sweptKeys = new Set<string>();
         for (const selected of selectedItems) {
+          if (selected.platform === 'github') {
+            itemsToSync.push({
+              id: selected.id,
+              fileKey: selected.fileKey,
+              nodeId: selected.nodeId,
+              nodeName: selected.nodeName,
+              platform: 'github',
+            });
+            continue;
+          }
           const sweepKey = `${selected.platform || 'figma'}|${selected.fileKey}|${selected.nodeId}`;
           if (sweptKeys.has(sweepKey)) continue;
           sweptKeys.add(sweepKey);
@@ -152,7 +164,7 @@ return;
           for (const match of matches) {
             let format: 'png' | 'svg' = selected.format || (selected.platform === 'penpot' ? 'svg' : 'png');
             let scale = selected.scale || 1;
-            let platform = selected.platform || 'figma';
+            let platform: 'figma' | 'penpot' | 'github' = selected.platform || 'figma';
 
             let storedWidth: number | undefined;
             try {
@@ -160,7 +172,7 @@ return;
               const syncData = metadata?.syncingboard as { 
                 format?: 'png' | 'svg'; 
                 scale?: number;
-                platform?: 'figma' | 'penpot';
+                platform?: 'figma' | 'penpot' | 'github';
                 width?: number;
                 height?: number;
               } | undefined;
@@ -228,11 +240,11 @@ return;
       // Copies at different scales of the same image are NOT counted separately.
       const isTauriMode =
         typeof window !== 'undefined' && localStorage.getItem('syncingboard_use_tauri') === 'true';
-      const uniqueGroupMap = new Map<string, { platform: 'figma' | 'penpot' }>();
+      const uniqueGroupMap = new Map<string, { platform: 'figma' | 'penpot' | 'github' }>();
       for (const item of itemsToSync) {
         const key = `${item.fileKey}|${item.nodeId}`;
         if (!uniqueGroupMap.has(key)) {
-          uniqueGroupMap.set(key, { platform: item.platform === 'penpot' ? 'penpot' : 'figma' });
+          uniqueGroupMap.set(key, { platform: item.platform || 'figma' });
         }
       }
       const batchCheck = evaluateBatchLimits([...uniqueGroupMap.values()], isTauriMode);
@@ -240,7 +252,7 @@ return;
         throw new Error(batchCheck.reason || 'Batch limit exceeded. Deselect some items to continue.');
       }
       if (itemsToSync.length > 3) {
-        setSyncStatus(`Syncing ${itemsToSync.length} widget(s) across ${uniqueGroupMap.size} image(s)`);
+        setSyncStatus(`Syncing ${itemsToSync.length} widget(s) across ${uniqueGroupMap.size} item(s)`);
       }
 
       // renderCache: "fileKey|nodeId|format" -> base64 data URL
@@ -248,9 +260,11 @@ return;
       const renderCache = new Map<string, string>();
       const nameCache = new Map<string, string>();
 
-      // Partition into Figma and Penpot targets
-      const figmaTargets = itemsToSync.filter(t => t.platform !== 'penpot');
-      const penpotTargets = itemsToSync.filter(t => t.platform === 'penpot');
+      // Partition into Figma, Penpot, and GitHub Docs targets
+      const githubTargets = itemsToSync.filter(t => t.platform === 'github');
+      const imageTargets = itemsToSync.filter(t => t.platform !== 'github');
+      const figmaTargets = imageTargets.filter(t => t.platform !== 'penpot');
+      const penpotTargets = imageTargets.filter(t => t.platform === 'penpot');
 
       // --- Figma Rendering (Local Companion exportAsync() first when Tauri is active, cloud fallback) ---
       if (figmaTargets.length > 0) {
@@ -413,8 +427,107 @@ throw new Error(communityMessage);
       let updatedCount = 0;
       const missingNodes: string[] = [];
 
-      for (let i = 0; i < itemsToSync.length; i++) {
-        const item = itemsToSync[i];
+      // --- GitHub Docs Text Sync (In-Place via Miro Web SDK v2, 0 REST PATCH calls) ---
+      if (githubTargets.length > 0) {
+        const oauthGhToken = await getValidToken('github');
+        const manualGhPat =
+          typeof window !== 'undefined' ? window.localStorage.getItem('syncingboard_github_pat') || '' : '';
+        const githubPat = oauthGhToken?.trim() || manualGhPat.trim();
+        const docCache = new Map<string, GitHubDocPayload | 'not_modified'>();
+
+        for (const target of githubTargets) {
+          setSyncStatus(`Syncing GitHub doc: ${target.nodeName}...`);
+          const widget = (await miro.board.getById(target.id)) as unknown as {
+            id: string;
+            content?: string;
+            getMetadata?(ns?: string): Promise<unknown>;
+            setMetadata?(ns: string, val: unknown): Promise<void>;
+            sync?(): Promise<void>;
+          } | null;
+          if (!widget) continue;
+
+          const meta = (await widget.getMetadata?.('syncingboard')) as Record<string, unknown> | undefined;
+          const etag = typeof meta?.etag === 'string' ? meta.etag : null;
+          const prevHash = typeof meta?.contentHash === 'string' ? meta.contentHash : '';
+
+          let payload = docCache.get(target.fileKey);
+          if (!payload) {
+            const headers: Record<string, string> = {};
+            if (githubPat.trim()) headers.Authorization = `Bearer ${githubPat.trim()}`;
+            if (etag) headers['If-None-Match'] = etag;
+            const res = await fetch(`/api/github/markdown?url=${encodeURIComponent(target.fileKey)}`, {
+              method: 'GET',
+              headers,
+              cache: 'no-store',
+            });
+            if (res.status === 304) {
+              payload = 'not_modified';
+            } else if (res.ok) {
+              payload = (await res.json()) as GitHubDocPayload;
+            } else {
+              const errJson = (await res.json().catch(() => ({}))) as { error?: string };
+              throw new Error(errJson.error || `GitHub fetch failed (HTTP ${res.status})`);
+            }
+            docCache.set(target.fileKey, payload);
+          }
+
+          if (payload === 'not_modified') {
+            updatedCount += 1;
+            continue;
+          }
+
+          let md: string | null = null;
+          let title = target.nodeName;
+          let hash = payload.fullHash;
+          if (target.nodeId === '*') {
+            md = payload.fullMarkdown;
+            title = payload.path;
+          } else if (
+            payload.lineRange &&
+            target.nodeId === `L${payload.lineRange.start}-L${payload.lineRange.end}` &&
+            payload.lineRangeMarkdown !== null
+          ) {
+            md = payload.lineRangeMarkdown;
+            title = `${payload.path}#${target.nodeId}`;
+            hash = payload.lineRangeHash || payload.fullHash;
+          } else {
+            const sec = payload.sections.find((s) => s.id === target.nodeId);
+            if (sec) {
+              md = sec.markdown;
+              title = sec.title;
+              hash = sec.contentHash;
+            }
+          }
+
+          if (md === null) {
+            const label = `"${target.nodeName}" (#${target.nodeId})`;
+            if (!missingNodes.includes(label)) missingNodes.push(label);
+            continue;
+          }
+
+          if (hash !== prevHash) {
+            widget.content = compileToMiroHtml(md);
+            if (widget.setMetadata) {
+              await widget.setMetadata('syncingboard', {
+                ...(meta || {}),
+                platform: 'github',
+                url: target.fileKey,
+                sectionId: target.nodeId,
+                sectionTitle: title,
+                contentHash: hash,
+                etag: payload.etag,
+              });
+            }
+            if (widget.sync) {
+              await widget.sync();
+            }
+          }
+          updatedCount += 1;
+        }
+      }
+
+      for (let i = 0; i < imageTargets.length; i++) {
+        const item = imageTargets[i];
         // Look up by format-aware cache key (Penpot uses format in key, Figma doesn't)
         const cacheKey = `${item.fileKey}|${item.nodeId}`;
         const cacheFormat = item.format || 'png';
@@ -495,7 +608,7 @@ throw new Error(communityMessage);
             nodeId: item.nodeId,
             format: item.format || (item.platform === 'penpot' ? 'svg' : 'png'),
             scale: item.scale || 2,
-            platform: item.platform || 'figma',
+            platform: item.platform === 'penpot' ? 'penpot' : 'figma',
             title: titleTag,
           });
         } catch (metaErr) {

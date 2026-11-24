@@ -120,6 +120,16 @@ For power users running **Figma Desktop** and **Miro Desktop**, the optional **S
 
 ---
 
+## GitHub Docs-as-Code Text Sync (Miro MVP)
+
+Keep product specs, architecture notes, and release documentation in sync between GitHub Markdown files and your Miro boards:
+
+* **Deterministic Section Picker:** Paste any GitHub `.md` URL (public or private) in **Import → DOCS** to parse headings (`#`–`######`) into selectable sections, then import them as Miro `text`, `shape`, or `sticky_note` widgets.
+* **In-Place Updates & Section Switching:** Select any bound GitHub widget on the Miro canvas to refresh it from the unified **Sync** tab — preserving position, size, connectors, and comments. Use the inline **Section** dropdown on any Sync card to retarget a widget to another heading in the same file.
+* **Private Repo OAuth:** Connect your GitHub account once in **Settings → GitHub Status** (stateless OAuth stored only in your browser) to read authorized private repositories without pasting Personal Access Tokens.
+
+---
+
 ## Explore More Documentation
 
 * [Quickstart Setup Guide](/docs/setup) - Learn how to set up SyncingBoard in 2 minutes.

@@ -11,7 +11,7 @@ export const LOCAL_FIGMA_BATCH_LIMIT = 50;
 export const PENPOT_BATCH_LIMIT = 3;
 
 export interface BatchGroupLike {
-  platform?: 'figma' | 'penpot';
+  platform?: 'figma' | 'penpot' | 'github';
 }
 
 export interface BatchLimitResult {
@@ -30,6 +30,10 @@ export function evaluateBatchLimits(
   let penpotCount = 0;
 
   for (const g of groups) {
+    if (g.platform === 'github') {
+      // GitHub Docs text widgets update locally via Miro Web SDK v2 (0 image PATCH calls)
+      continue;
+    }
     if (g.platform === 'penpot') {
       penpotCount += 1;
     } else {

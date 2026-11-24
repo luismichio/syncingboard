@@ -51,6 +51,7 @@ function normalizeTokenData(value: unknown): TokenData | null {
 export function useAuthTokens(isInitMode: boolean | null) {
   const [figmaToken, setFigmaToken] = useState<string | null>(null);
   const [miroToken, setMiroToken] = useState<string | null>(null);
+  const [githubToken, setGithubToken] = useState<string | null>(null);
   const [tokensLoading, setTokensLoading] = useState<boolean>(true);
 
   useEffect(() => {
@@ -115,10 +116,12 @@ export function useAuthTokens(isInitMode: boolean | null) {
       try {
         fToken = await getValidToken('figma');
         mToken = await getValidToken('miro');
+        const gToken = await getValidToken('github');
 
         if (!active) return;
         setFigmaToken(fToken);
         setMiroToken(mToken);
+        setGithubToken(gToken);
 
         // Startup Figma token validation: if we have a token, verify it's
         // actually accepted by Figma's API (catches server-side revocation).
@@ -203,16 +206,19 @@ export function useAuthTokens(isInitMode: boolean | null) {
       setTokensLoading(false);
     };
 
-    const applyAuthSuccess = async (platform: 'figma' | 'miro', rawTokens: unknown) => {
+    const applyAuthSuccess = async (platform: 'figma' | 'miro' | 'github', rawTokens: unknown) => {
       const normalized = normalizeTokenData(rawTokens);
       if (!normalized) return;
 
       if (platform === 'figma') {
         setFigmaToken(normalized.accessToken);
         await saveToken('figma', normalized);
-      } else {
+      } else if (platform === 'miro') {
         setMiroToken(normalized.accessToken);
         await saveToken('miro', normalized);
+      } else {
+        setGithubToken(normalized.accessToken);
+        await saveToken('github', normalized);
       }
 
       setTokensLoading(false);
@@ -232,6 +238,9 @@ export function useAuthTokens(isInitMode: boolean | null) {
       if (type === 'MIRO_AUTH_SUCCESS') {
         await applyAuthSuccess('miro', obj.tokens);
       }
+      if (type === 'GITHUB_AUTH_SUCCESS') {
+        await applyAuthSuccess('github', obj.tokens);
+      }
     };
 
     // Listen to postMessage from popup directly (bypasses BroadcastChannel partitioning edge cases)
@@ -250,6 +259,9 @@ export function useAuthTokens(isInitMode: boolean | null) {
       if (type === 'MIRO_AUTH_SUCCESS') {
         await applyAuthSuccess('miro', obj.tokens);
       }
+      if (type === 'GITHUB_AUTH_SUCCESS') {
+        await applyAuthSuccess('github', obj.tokens);
+      }
     };
 
     window.addEventListener('message', handlePopupMessage);
@@ -262,7 +274,7 @@ export function useAuthTokens(isInitMode: boolean | null) {
     };
   }, [isInitMode]);
 
-  const startPolling = (platform: 'figma' | 'miro', state: string, popup: Window | null) => {
+  const startPolling = (platform: 'figma' | 'miro' | 'github', state: string, popup: Window | null) => {
     const interval = setInterval(async () => {
       // If popup was closed manually, stop polling
       if (popup && popup.closed) {
@@ -290,9 +302,12 @@ export function useAuthTokens(isInitMode: boolean | null) {
         if (platform === 'figma') {
           setFigmaToken(normalizedTokens.accessToken);
           await saveToken('figma', normalizedTokens);
-        } else {
+        } else if (platform === 'miro') {
           setMiroToken(normalizedTokens.accessToken);
           await saveToken('miro', normalizedTokens);
+        } else {
+          setGithubToken(normalizedTokens.accessToken);
+          await saveToken('github', normalizedTokens);
         }
 
         setTokensLoading(false);
@@ -377,13 +392,46 @@ export function useAuthTokens(isInitMode: boolean | null) {
     }
   };
 
+  const connectGithub = () => {
+    const state = generateSecureState('gh');
+    const width = 600;
+    const height = 700;
+    const left = window.screen.width / 2 - width / 2;
+    const top = window.screen.height / 2 - height / 2;
+
+    const popup = window.open(
+      `/api/oauth/github/auth?state=${state}`,
+      'Connect GitHub',
+      `width=${width},height=${height},top=${top},left=${left}`
+    );
+
+    startPolling('github', state, popup);
+    trackEvent('oauth_attempt', 'github');
+  };
+
+  const disconnectGithub = async () => {
+    try {
+      await clearToken('github');
+      setGithubToken(null);
+      const syncChannel = new BroadcastChannel('figma_miro_sync');
+      syncChannel.postMessage({ type: 'TOKENS_UPDATED', tokenData: { githubToken: null } });
+      syncChannel.close();
+      trackEvent('oauth_disconnect', 'github');
+    } catch (e) {
+      console.error('Failed to disconnect GitHub:', e);
+    }
+  };
+
   return {
     figmaToken,
     miroToken,
+    githubToken,
     connectFigma,
     connectMiro,
+    connectGithub,
     disconnectFigma,
     disconnectMiro,
+    disconnectGithub,
     setFigmaToken,
     setMiroToken,
     tokensLoading,

@@ -6,10 +6,13 @@ interface SettingsTabProps {
   tokensLoading: boolean;
   figmaToken: string | null;
   miroToken: string | null;
+  githubToken?: string | null;
   connectFigma: () => void;
   connectMiro: () => void;
+  connectGithub?: () => void;
   disconnectFigma: () => Promise<void>;
   disconnectMiro: () => Promise<void>;
+  disconnectGithub?: () => Promise<void>;
   copiedPairing: boolean;
   pairingId: string;
   copyPairingId: () => void;
@@ -27,10 +30,13 @@ export function SettingsTab({
   tokensLoading,
   figmaToken,
   miroToken,
+  githubToken = null,
   connectFigma,
   connectMiro,
+  connectGithub,
   disconnectFigma,
   disconnectMiro,
+  disconnectGithub,
   copiedPairing,
   pairingId,
   copyPairingId,
@@ -121,6 +127,35 @@ export function SettingsTab({
               </button>
             )}
           </div>
+
+          {connectGithub && disconnectGithub && (
+            <div className="p-3 rounded-lg bg-bg-card border border-border-card flex justify-between items-center">
+              <div>
+                <div className="text-xs font-semibold text-text-page">GitHub Status</div>
+                <div className="text-[10px] text-text-muted">OAuth connection for private Markdown docs</div>
+              </div>
+              {tokensLoading ? (
+                <span className="h-2 w-2 rounded-full bg-yellow-500 animate-pulse"></span>
+              ) : githubToken ? (
+                <div className="flex items-center gap-3">
+                  <span className="h-2 w-2 rounded-full bg-green-500"></span>
+                  <button
+                    onClick={disconnectGithub}
+                    className="text-[9px] font-mono font-bold tracking-wider text-text-muted hover:text-accent uppercase underline bg-transparent cursor-pointer"
+                  >
+                    Disconnect
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={connectGithub}
+                  className="text-[10px] font-mono tracking-wider font-semibold border border-accent text-accent rounded px-2.5 py-1 bg-transparent hover:bg-accent hover:text-bg-page transition cursor-pointer"
+                >
+                  CONNECT
+                </button>
+              )}
+            </div>
+          )}
 
           <div className="p-3 rounded-lg bg-bg-card border border-border-card flex flex-col gap-2">
             <div className="flex justify-between items-center">
