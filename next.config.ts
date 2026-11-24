@@ -11,6 +11,7 @@ const nextConfig: NextConfig = {
           { key: "Access-Control-Allow-Origin", value: "*" },
           { key: "Access-Control-Allow-Methods", value: "GET,OPTIONS" },
           { key: "Access-Control-Allow-Headers", value: "Content-Type" },
+          { key: "Cache-Control", value: "no-store, max-age=0" },
         ],
       },
       {
@@ -19,6 +20,7 @@ const nextConfig: NextConfig = {
           { key: "Access-Control-Allow-Origin", value: "*" },
           { key: "Access-Control-Allow-Methods", value: "GET,OPTIONS" },
           { key: "Access-Control-Allow-Headers", value: "Content-Type" },
+          { key: "Cache-Control", value: "no-store, max-age=0" },
         ],
       },
       {
@@ -27,6 +29,7 @@ const nextConfig: NextConfig = {
           { key: "Access-Control-Allow-Origin", value: "*" },
           { key: "Access-Control-Allow-Methods", value: "GET,OPTIONS" },
           { key: "Access-Control-Allow-Headers", value: "Content-Type" },
+          { key: "Cache-Control", value: "no-store, max-age=0" },
         ],
       },
       // Dev-mode only: keep chunk URLs no-store so embedded caches (Figma

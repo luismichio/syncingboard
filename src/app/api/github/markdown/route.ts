@@ -54,7 +54,7 @@ async function handler(request: Request) {
       const status = res.status === 404 ? 404 : res.status === 401 || res.status === 403 ? res.status : 502;
       const hint =
         res.status === 404
-          ? 'File not found on GitHub (if private repo, provide a GitHub Personal Access Token).'
+          ? 'File not found on GitHub (for private repos, ensure the GitHub App is installed on this repo or provide a Personal Access Token).'
           : res.status === 401 || res.status === 403
             ? 'GitHub denied access (check your token permissions or rate limit).'
             : `GitHub API returned HTTP ${res.status}.`;
@@ -105,4 +105,4 @@ async function handler(request: Request) {
   }
 }
 
-export const GET = withRateLimit({ endpoint: 'figma:node-info' })(handler);
+export const GET = withRateLimit({ endpoint: 'github:markdown' })(handler);

@@ -48,6 +48,8 @@ export type Plan = "community";
 export interface PlanConfig {
   figmaPerMin: number;
   figmaPerDay: number;
+  githubPerMin: number;
+  githubPerDay: number;
   relayPerMin: number;
   relayPerHour: number;
   relayPerDay: number;
@@ -69,6 +71,8 @@ export interface PlanConfig {
 const COMMUNITY_PLAN: PlanConfig = {
   figmaPerMin: envInt("RATE_LIMIT_COMMUNITY_FIGMA_PER_MIN", 5),
   figmaPerDay: envInt("RATE_LIMIT_COMMUNITY_FIGMA_PER_DAY", 50),
+  githubPerMin: envInt("RATE_LIMIT_COMMUNITY_GITHUB_PER_MIN", 30),
+  githubPerDay: envInt("RATE_LIMIT_COMMUNITY_GITHUB_PER_DAY", 500),
   relayPerMin: envInt("RATE_LIMIT_COMMUNITY_RELAY_PER_MIN", 8),
   relayPerHour: envInt("RATE_LIMIT_COMMUNITY_RELAY_PER_HOUR", 60),
   relayPerDay: envInt("RATE_LIMIT_COMMUNITY_RELAY_PER_DAY", 200),
@@ -139,6 +143,10 @@ const IDENTIFIER_EXTRACTORS: Record<string, IdentifierExtractor> = {
     return token ? `tok:${hashId(token)}` : null;
   },
   "figma:node-info": (req) => {
+    const token = extractBearerToken(req);
+    return token ? `tok:${hashId(token)}` : null;
+  },
+  "github:markdown": (req) => {
     const token = extractBearerToken(req);
     return token ? `tok:${hashId(token)}` : null;
   },
@@ -269,6 +277,12 @@ const ENDPOINT_LIMITS: Record<string, RateLimitConfig | MultiWindowConfig> = {
     windows: [
       { limit: COMMUNITY_PLAN.figmaPerMin, window: 60 },
       { limit: COMMUNITY_PLAN.figmaPerDay, window: 86_400 },
+    ],
+  },
+  "github:markdown": {
+    windows: [
+      { limit: COMMUNITY_PLAN.githubPerMin, window: 60 },
+      { limit: COMMUNITY_PLAN.githubPerDay, window: 86_400 },
     ],
   },
   // Penpot/Figma relay exports are the costlier Ably + Redis + payload path;

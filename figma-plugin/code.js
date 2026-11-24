@@ -230,16 +230,20 @@ async function figjamPlace(payload) {
     // hand or other plugins). Their plugin data is rewritten to the new key.
     let targetNodes = null;
     if (Array.isArray(payload.forceNodeIds) && payload.forceNodeIds.length > 0) {
-      targetNodes = payload.forceNodeIds
-        .map(function (id) {
+      const resolved = await Promise.all(
+        payload.forceNodeIds.map(async function (id) {
           try {
-            const node = figma.getNodeById(String(id));
+            const node =
+              typeof figma.getNodeByIdAsync === 'function'
+                ? await figma.getNodeByIdAsync(String(id))
+                : figma.getNodeById(String(id));
             return node && typeof node.fills !== 'undefined' ? node : null;
-          } catch (e) {
+          } catch {
             return null;
           }
         })
-        .filter(Boolean);
+      );
+      targetNodes = resolved.filter(Boolean);
     }
     if (!targetNodes || targetNodes.length === 0) {
       // Selection-driven default: update ONLY the instances the caller names.
@@ -444,7 +448,7 @@ function pushFileKey() {
 
 function figjamNodeSummary(n) {
   const meta = figjamMeta(n);
-  return {
+  const summary = {
     id: n.id,
     key: meta.key || figjamKey(meta.fileKey || '', meta.nodeId || ''),
     fileKey: meta.fileKey || '',
@@ -454,6 +458,260 @@ function figjamNodeSummary(n) {
     scale: meta.scale || 1,
     platform: meta.platform || 'figma',
   };
+  if (meta.platform === 'github') {
+    summary.githubUrl = meta.githubUrl || meta.fileKey || '';
+    summary.githubBranch = meta.githubBranch || 'main';
+    summary.sectionId = meta.sectionId || meta.nodeId || '';
+    summary.sectionHeading = meta.sectionHeading || meta.name || '';
+    summary.contentHash = meta.contentHash || '';
+    summary.etag = meta.etag || '';
+    summary.widgetType = meta.widgetType || 'text';
+  }
+  return summary;
+}
+
+// ---- FigJam Docs-as-Code Text Sync (GitHub Markdown) ------------------------
+async function figjamApplyTextRanges(textSublayer, characters, ranges, isTextNode) {
+  if (!textSublayer) throw new Error('Target node has no editable text layer');
+
+  // Load any existing fonts on the text layer first (required by Figma Plugin API before mutating .characters)
+  try {
+    if (typeof textSublayer.getRangeAllFontNames === 'function' && textSublayer.characters && textSublayer.characters.length > 0) {
+      const existingFonts = textSublayer.getRangeAllFontNames(0, textSublayer.characters.length);
+      if (Array.isArray(existingFonts)) {
+        await Promise.all(
+          existingFonts.map((f) => figma.loadFontAsync(f).catch(() => {}))
+        );
+      }
+    }
+  } catch { /* ignore */ }
+
+  // Determine base font family (always reset base style to Regular so headings/bold don't bleed into body text)
+  let baseFamily = 'Inter';
+  try {
+    const fn = textSublayer.fontName;
+    if (fn && typeof fn === 'object' && typeof fn.family === 'string') {
+      baseFamily = fn.family;
+    } else if (typeof textSublayer.getRangeFontName === 'function' && textSublayer.characters && textSublayer.characters.length > 0) {
+      const firstFn = textSublayer.getRangeFontName(0, 1);
+      if (firstFn && typeof firstFn === 'object' && typeof firstFn.family === 'string') {
+        baseFamily = firstFn.family;
+      }
+    }
+  } catch { /* ignore */ }
+
+  // Always load Regular base font first
+  try {
+    await figma.loadFontAsync({ family: baseFamily, style: 'Regular' });
+  } catch {
+    baseFamily = 'Inter';
+    await figma.loadFontAsync({ family: 'Inter', style: 'Regular' });
+  }
+
+  // Preload bold/italic variants on a best-effort basis
+  const loadedStyles = { regular: true, bold: false, italic: false, boldItalic: false };
+  const tryLoad = async (style, key) => {
+    try {
+      await figma.loadFontAsync({ family: baseFamily, style });
+      loadedStyles[key] = true;
+    } catch { /* font variant unavailable */ }
+  };
+  await Promise.all([
+    tryLoad('Bold', 'bold'),
+    tryLoad('Italic', 'italic'),
+    tryLoad('Bold Italic', 'boldItalic'),
+  ]);
+
+  const safeChars = typeof characters === 'string' ? characters : '';
+  textSublayer.characters = safeChars;
+
+  if (safeChars.length === 0) return;
+
+  // Reset full text range to clean base formatting BEFORE applying styled spans
+  // (prevents previous heading/bold/link styles from bleeding across the updated text)
+  try {
+    textSublayer.setRangeFontName(0, safeChars.length, { family: baseFamily, style: 'Regular' });
+  } catch { /* ignore */ }
+  if (isTextNode) {
+    try {
+      if (typeof textSublayer.setRangeFontSize === 'function') {
+        textSublayer.setRangeFontSize(0, safeChars.length, 14);
+      }
+    } catch { /* ignore */ }
+  }
+  try {
+    if (typeof textSublayer.setRangeHyperlink === 'function') {
+      textSublayer.setRangeHyperlink(0, safeChars.length, null);
+    }
+  } catch { /* ignore */ }
+
+  if (!Array.isArray(ranges)) return;
+
+  for (const r of ranges) {
+    if (!r || typeof r.start !== 'number' || typeof r.end !== 'number') continue;
+    const start = Math.max(0, Math.min(safeChars.length, r.start));
+    const end = Math.max(start, Math.min(safeChars.length, r.end));
+    if (end <= start) continue;
+
+    try {
+      if (r.bold && r.italic && loadedStyles.boldItalic) {
+        textSublayer.setRangeFontName(start, end, { family: baseFamily, style: 'Bold Italic' });
+      } else if (r.bold && loadedStyles.bold) {
+        textSublayer.setRangeFontName(start, end, { family: baseFamily, style: 'Bold' });
+      } else if (r.italic && loadedStyles.italic) {
+        textSublayer.setRangeFontName(start, end, { family: baseFamily, style: 'Italic' });
+      }
+    } catch { /* ignore unsupported font style */ }
+
+    if (typeof r.headingLevel === 'number' && r.headingLevel >= 1) {
+      const headingSize = r.headingLevel === 1 ? 24 : r.headingLevel === 2 ? 20 : r.headingLevel === 3 ? 17 : 15;
+      try {
+        if (typeof textSublayer.setRangeFontSize === 'function') {
+          textSublayer.setRangeFontSize(start, end, headingSize);
+        }
+      } catch { /* Sticky/ShapeWithText may restrict font size */ }
+    }
+
+    const linkUrl = typeof r.href === 'string' ? r.href : typeof r.linkUrl === 'string' ? r.linkUrl : '';
+    if (linkUrl && linkUrl.startsWith('http')) {
+      try {
+        if (typeof textSublayer.setRangeHyperlink === 'function') {
+          textSublayer.setRangeHyperlink(start, end, { type: 'URL', value: linkUrl });
+        }
+      } catch { /* ignore */ }
+    }
+  }
+}
+
+async function figjamPlaceDoc(payload) {
+  try {
+    const widgetType = payload && payload.widgetType ? String(payload.widgetType) : 'text';
+    const githubUrl = String((payload && payload.githubUrl) || '');
+    const githubBranch = String((payload && payload.githubBranch) || 'main');
+    const sectionId = String((payload && payload.sectionId) || 'document');
+    const sectionHeading = String((payload && payload.sectionHeading) || 'GitHub Doc');
+    const characters = String((payload && payload.characters) || '');
+    const ranges = Array.isArray(payload && payload.ranges) ? payload.ranges : [];
+    const contentHash = String((payload && payload.contentHash) || '');
+    const etag = String((payload && payload.etag) || '');
+    const offsetX = typeof (payload && payload.offsetX) === 'number' ? payload.offsetX : 0;
+    const offsetY = typeof (payload && payload.offsetY) === 'number' ? payload.offsetY : 0;
+
+    let node;
+    let textSublayer;
+    if (widgetType === 'sticky_note' && typeof figma.createSticky === 'function') {
+      node = figma.createSticky();
+      textSublayer = node.text;
+    } else if (widgetType === 'shape' && typeof figma.createShapeWithText === 'function') {
+      node = figma.createShapeWithText();
+      node.shapeType = 'ROUNDED_RECTANGLE';
+      textSublayer = node.text;
+    } else {
+      node = figma.createText();
+      textSublayer = node;
+    }
+
+    const center = (figma.viewport && figma.viewport.center) || { x: 0, y: 0 };
+    node.x = Math.round(center.x + offsetX);
+    node.y = Math.round(center.y + offsetY);
+    if (typeof node.name === 'string') {
+      node.name = sectionHeading;
+    }
+
+    await figjamApplyTextRanges(textSublayer, characters, ranges, node.type === 'TEXT');
+
+    if (node.type === 'TEXT' && typeof node.resize === 'function') {
+      try {
+        node.textAutoResize = 'HEIGHT';
+        node.resize(480, Math.max(80, node.height));
+      } catch { /* ignore */ }
+    }
+
+    const meta = {
+      fileKey: githubUrl,
+      nodeId: sectionId,
+      key: figjamKey(githubUrl, sectionId),
+      name: sectionHeading,
+      platform: 'github',
+      githubUrl,
+      githubBranch,
+      sectionId,
+      sectionHeading,
+      contentHash,
+      etag,
+      widgetType,
+    };
+    node.setPluginData(SB_META_KEY, JSON.stringify(meta));
+    figma.currentPage.appendChild(node);
+    figma.currentPage.selection = [node];
+
+    const sbSel = figjamSelectionSummary();
+    figma.ui.postMessage({ action: 'figjam-selection', tracked: sbSel.tracked, foreign: sbSel.foreign });
+    return { ok: true, nodeId: node.id, name: sectionHeading, created: true };
+  } catch (err) {
+    const detail = err && err.message ? err.message : String(err);
+    return { ok: false, error: `figjam-place-doc failed (${detail})` };
+  }
+}
+
+async function figjamUpdateDoc(payload) {
+  try {
+    const nodeIds = Array.isArray(payload && payload.nodeIds)
+      ? payload.nodeIds
+      : payload && payload.nodeId
+        ? [payload.nodeId]
+        : [];
+    const characters = String((payload && payload.characters) || '');
+    const ranges = Array.isArray(payload && payload.ranges) ? payload.ranges : [];
+    const sectionId = payload && payload.sectionId ? String(payload.sectionId) : '';
+    const sectionHeading = payload && payload.sectionHeading ? String(payload.sectionHeading) : '';
+    const contentHash = payload && payload.contentHash ? String(payload.contentHash) : '';
+    const etag = payload && payload.etag ? String(payload.etag) : '';
+
+    let updatedCount = 0;
+    for (const id of nodeIds) {
+      const node =
+        typeof figma.getNodeByIdAsync === 'function'
+          ? await figma.getNodeByIdAsync(String(id))
+          : figma.getNodeById(String(id));
+      if (!node) continue;
+      const textSublayer = node.type === 'TEXT' ? node : node.text;
+      if (!textSublayer) continue;
+
+      await figjamApplyTextRanges(textSublayer, characters, ranges, node.type === 'TEXT');
+
+      const prevMeta = figjamMeta(node);
+      const nextSectionId = sectionId || prevMeta.sectionId || prevMeta.nodeId || 'document';
+      const nextHeading = sectionHeading || prevMeta.sectionHeading || prevMeta.name || 'GitHub Doc';
+      const githubUrl = (payload && payload.githubUrl ? String(payload.githubUrl) : '') || prevMeta.githubUrl || prevMeta.fileKey || '';
+      const githubBranch = (payload && payload.githubBranch ? String(payload.githubBranch) : '') || prevMeta.githubBranch || 'main';
+      const updatedMeta = Object.assign({}, prevMeta, {
+        fileKey: githubUrl,
+        nodeId: nextSectionId,
+        key: figjamKey(githubUrl, nextSectionId),
+        name: nextHeading,
+        platform: 'github',
+        githubUrl,
+        githubBranch,
+        sectionId: nextSectionId,
+        sectionHeading: nextHeading,
+        contentHash: contentHash || prevMeta.contentHash || '',
+        etag: etag || prevMeta.etag || '',
+      });
+      node.setPluginData(SB_META_KEY, JSON.stringify(updatedMeta));
+      if (typeof node.name === 'string') {
+        node.name = nextHeading;
+      }
+      updatedCount += 1;
+    }
+
+    const sbSel = figjamSelectionSummary();
+    figma.ui.postMessage({ action: 'figjam-selection', tracked: sbSel.tracked, foreign: sbSel.foreign });
+    return { ok: true, updatedCount, name: sectionHeading };
+  } catch (err) {
+    const detail = err && err.message ? err.message : String(err);
+    return { ok: false, error: `figjam-update-doc failed (${detail})` };
+  }
 }
 
 // Selection state sent to the mirror: ONLY the currently selected tracked
@@ -740,6 +998,15 @@ figma.ui.onmessage = async (msg) => {
     if (typeof msg.format === 'string') next.format = msg.format;
     if (Number.isFinite(msg.scale) && msg.scale > 0) next.scale = msg.scale;
     if (typeof msg.platform === 'string') next.platform = msg.platform;
+    if (typeof msg.sectionId === 'string') {
+      next.sectionId = msg.sectionId;
+      next.nodeId = msg.sectionId;
+      next.etag = '';
+    }
+    if (typeof msg.sectionHeading === 'string') {
+      next.sectionHeading = msg.sectionHeading;
+      next.name = msg.sectionHeading;
+    }
     try {
       figjamAllTracked()
         .filter(function (n) {
@@ -757,7 +1024,9 @@ figma.ui.onmessage = async (msg) => {
         })
         .forEach(function (n) {
           const meta = figjamMeta(n);
-          const updated = Object.assign({}, meta, next, { key: figjamKey(meta.fileKey || '', meta.nodeId || '') });
+          const nextFileKey = meta.fileKey || '';
+          const nextNodeId = next.nodeId || meta.nodeId || '';
+          const updated = Object.assign({}, meta, next, { key: figjamKey(nextFileKey, nextNodeId) });
           n.setPluginData(SB_META_KEY, JSON.stringify(updated));
         });
     } catch (e) {}
@@ -768,6 +1037,26 @@ figma.ui.onmessage = async (msg) => {
 
   if (msg.action === 'figjam-list') {
     figma.ui.postMessage({ action: 'figjam-state', tracked: figjamTrackedSummary() });
+    return;
+  }
+
+  if (msg.action === 'figjam-place-doc') {
+    const result = await figjamPlaceDoc(msg.payload);
+    figma.ui.postMessage({
+      action: 'figjam-doc-result',
+      requestId: msg.requestId,
+      ...result,
+    });
+    return;
+  }
+
+  if (msg.action === 'figjam-update-doc') {
+    const result = await figjamUpdateDoc(msg.payload);
+    figma.ui.postMessage({
+      action: 'figjam-doc-result',
+      requestId: msg.requestId,
+      ...result,
+    });
     return;
   }
 

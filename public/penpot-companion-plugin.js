@@ -45,10 +45,21 @@ function broadcastSelection() {
     let selName = null;
     let selWidth = 0;
     let selHeight = 0;
+    let selType = null;
+    let selGitMeta = null;
 
     if (item && typeof item === 'object') {
       selId = item.id;
       selName = item.name || 'Untitled Shape';
+      selType = item.type || null;
+      try {
+        if (typeof item.getPluginData === 'function') {
+          const raw = item.getPluginData('syncboard-git');
+          if (raw) selGitMeta = JSON.parse(raw);
+        }
+      } catch {
+        // ignore invalid metadata
+      }
       if (item.selrect) {
         selWidth = Math.round(item.selrect.width || 0);
         selHeight = Math.round(item.selrect.height || 0);
@@ -62,6 +73,15 @@ function broadcastSelection() {
         const shape = penpot.currentPage.getShapeById(item);
         if (shape) {
           selName = shape.name || 'Untitled Shape';
+          selType = shape.type || null;
+          try {
+            if (typeof shape.getPluginData === 'function') {
+              const raw = shape.getPluginData('syncboard-git');
+              if (raw) selGitMeta = JSON.parse(raw);
+            }
+          } catch {
+            // ignore
+          }
           if (shape.selrect) {
             selWidth = Math.round(shape.selrect.width || 0);
             selHeight = Math.round(shape.selrect.height || 0);
@@ -79,6 +99,8 @@ function broadcastSelection() {
             fileId: fileId,
             width: selWidth,
             height: selHeight,
+            shapeType: selType,
+            gitMeta: selGitMeta,
           }
         : null,
     });
@@ -307,5 +329,275 @@ penpot.ui.onMessage(async (message) => {
         error: messageText,
       });
     }
+    return;
+  }
+
+  // ---- Penpot GitHub Docs-as-Code Text Sync Handlers ----
+  const safeSet = (target, prop, value) => {
+    if (!target || value === undefined || value === null || value === '' || value === 'mixed') return;
+    try {
+      target[prop] = value;
+    } catch {
+      // Ignore unsupported property on this Penpot version
+    }
+  };
+
+  /**
+   * Applies Markdown character-range styles to a Penpot Text shape using the
+   * 3-step Penpot 2.19.x safe sequence:
+   *   1. Headings (fontSize BEFORE fontWeight, each set once)
+   *   2. Non-heading gaps clamped to 14/400 (prevents Penpot heading bleed)
+   *   3. Inline bold / italic / code spans
+   */
+  const applyStyledPenpotText = (shape, characters, ranges, isUpdate) => {
+    const safeChars = typeof characters === 'string' ? characters : '';
+    if (isUpdate) {
+      shape.characters = safeChars;
+    }
+    if (typeof shape.getRange !== 'function' || safeChars.length === 0) {
+      return shape;
+    }
+
+    // On in-place update, clear stale italic/code/bold/size across the whole range first
+    if (isUpdate) {
+      try {
+        const full = shape.getRange(0, safeChars.length);
+        if (full) {
+          safeSet(full, 'fontSize', '14');
+          safeSet(full, 'fontWeight', '400');
+          safeSet(full, 'fontStyle', 'normal');
+          safeSet(full, 'fontFamily', 'Source Sans Pro');
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    if (!Array.isArray(ranges)) return shape;
+
+    const validRanges = ranges
+      .filter((r) => r && typeof r.start === 'number' && typeof r.end === 'number')
+      .map((r) => ({
+        start: Math.max(0, Math.min(safeChars.length, r.start)),
+        end: Math.max(0, Math.min(safeChars.length, r.end)),
+        bold: Boolean(r.bold),
+        italic: Boolean(r.italic),
+        code: Boolean(r.code),
+        headingLevel: typeof r.headingLevel === 'number' && r.headingLevel >= 1 ? r.headingLevel : 0,
+      }))
+      .filter((r) => r.end > r.start);
+
+    // 1. Apply heading ranges first (fontSize BEFORE fontWeight, each set once)
+    const headingRanges = validRanges
+      .filter((r) => r.headingLevel >= 1)
+      .sort((a, b) => a.start - b.start);
+    for (const r of headingRanges) {
+      try {
+        const range = shape.getRange(r.start, r.end);
+        if (!range) continue;
+        const headingSize =
+          r.headingLevel === 1 ? '24' : r.headingLevel === 2 ? '20' : r.headingLevel === 3 ? '17' : '15';
+        safeSet(range, 'fontSize', headingSize);
+        safeSet(range, 'fontWeight', '700');
+      } catch {
+        // Ignore unsupported range style properties
+      }
+    }
+
+    // 2. Explicitly clamp all non-heading gaps to 14/400 (prevents Penpot 2.19.x
+    //    rich-text engine from leaking heading size/weight into sibling paragraphs)
+    if (headingRanges.length > 0) {
+      let cursor = 0;
+      for (const r of headingRanges) {
+        if (r.start > cursor) {
+          try {
+            const gap = shape.getRange(cursor, r.start);
+            if (gap) {
+              safeSet(gap, 'fontSize', '14');
+              safeSet(gap, 'fontWeight', '400');
+            }
+          } catch {
+            // ignore
+          }
+        }
+        cursor = Math.max(cursor, r.end);
+      }
+      if (cursor < safeChars.length) {
+        try {
+          const gap = shape.getRange(cursor, safeChars.length);
+          if (gap) {
+            safeSet(gap, 'fontSize', '14');
+            safeSet(gap, 'fontWeight', '400');
+          }
+        } catch {
+          // ignore
+        }
+      }
+    }
+
+    // 3. Apply inline bold / italic / code spans
+    for (const r of validRanges) {
+      if (r.headingLevel >= 1) continue;
+      if (!r.bold && !r.italic && !r.code) continue;
+      try {
+        const range = shape.getRange(r.start, r.end);
+        if (!range) continue;
+        if (r.bold) safeSet(range, 'fontWeight', '700');
+        if (r.italic) safeSet(range, 'fontStyle', 'italic');
+        if (r.code) safeSet(range, 'fontFamily', 'JetBrains Mono');
+      } catch {
+        // Ignore unsupported range style properties
+      }
+    }
+
+    return shape;
+  };
+
+  if (message.action === 'scan-git-shapes') {
+    try {
+      const page = penpot.currentPage;
+      const textShapes = page && typeof page.findShapes === 'function'
+        ? page.findShapes({ type: 'text' })
+        : [];
+      const found = [];
+      for (const s of textShapes) {
+        let meta = null;
+        try {
+          if (typeof s.getPluginData === 'function') {
+            const raw = s.getPluginData('syncboard-git');
+            if (raw) meta = JSON.parse(raw);
+          }
+        } catch {
+          // ignore
+        }
+        const name = s.name || '';
+        const hasConvention = /^#?git:/i.test(name);
+        if (meta || hasConvention) {
+          found.push({
+            id: s.id,
+            name,
+            meta,
+          });
+        }
+      }
+      penpot.ui.sendMessage({
+        action: 'scan-git-shapes-result',
+        requestId: message.requestId,
+        data: found,
+      });
+    } catch (err) {
+      penpot.ui.sendMessage({
+        action: 'scan-git-shapes-result',
+        requestId: message.requestId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    return;
+  }
+
+  if (message.action === 'create-git-text') {
+    try {
+      if (typeof penpot.createText !== 'function') {
+        throw new Error('penpot.createText is unavailable (check content:write permission)');
+      }
+      const chars = typeof message.characters === 'string' ? message.characters : '';
+      const shape = penpot.createText(chars || ' ');
+      if (!shape) throw new Error('Failed to create Penpot text shape');
+      applyStyledPenpotText(shape, chars, message.ranges, false);
+      // Match Miro/FigJam's 480px wrapped column default.
+      // Penpot gotcha: resize() forces growType='fixed', so set growType AFTER resize().
+      if (typeof shape.resize === 'function') {
+        try {
+          shape.resize(480, Math.max(80, shape.height || 80));
+        } catch {
+          // ignore
+        }
+      }
+      safeSet(shape, 'growType', 'auto-height');
+      if (penpot.viewport && penpot.viewport.center) {
+        shape.x = Math.round(penpot.viewport.center.x);
+        shape.y = Math.round(penpot.viewport.center.y);
+      }
+      if (message.meta && message.meta.sectionHeading) {
+        shape.name = String(message.meta.sectionHeading);
+      }
+      if (typeof shape.setPluginData === 'function' && message.meta) {
+        shape.setPluginData('syncboard-git', JSON.stringify(message.meta));
+      }
+      penpot.selection = [shape];
+      broadcastSelection();
+      penpot.ui.sendMessage({
+        action: 'git-text-result',
+        requestId: message.requestId,
+        data: { id: shape.id, created: true },
+      });
+    } catch (err) {
+      penpot.ui.sendMessage({
+        action: 'git-text-result',
+        requestId: message.requestId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    return;
+  }
+
+  if (message.action === 'update-git-text') {
+    try {
+      const targetId =
+        message.shapeId ||
+        (Array.isArray(penpot.selection) && penpot.selection[0] ? penpot.selection[0].id : null);
+      if (!targetId) {
+        throw new Error('Select a Penpot Text shape first.');
+      }
+      const shape = await findShapeById(targetId);
+      if (!shape) {
+        throw new Error(`Text shape ${targetId} not found.`);
+      }
+      if (shape.type !== 'text') {
+        throw new Error(`Selected shape "${shape.name || targetId}" is type "${shape.type}", not a text shape.`);
+      }
+      const chars = typeof message.characters === 'string' ? message.characters : '';
+      const prevGrowType = shape.growType;
+      const prevW = typeof shape.width === 'number' ? shape.width : 0;
+      const prevH = typeof shape.height === 'number' ? shape.height : 0;
+
+      // Update in-place to preserve exact shape ID, fills, and layout constraints
+      applyStyledPenpotText(shape, chars, message.ranges, true);
+
+      // Re-assert box dimensions after character mutation.
+      // Penpot gotcha: resize() forces growType='fixed', so ALWAYS set growType AFTER resize().
+      if (typeof shape.resize === 'function' && prevW > 0) {
+        try {
+          if (prevGrowType === 'fixed' && prevH > 0) {
+            shape.resize(prevW, prevH);
+          } else if (prevGrowType === 'auto-height') {
+            shape.resize(prevW, Math.max(40, shape.height || prevH || 40));
+          }
+        } catch {
+          // ignore
+        }
+      }
+      if (prevGrowType) safeSet(shape, 'growType', prevGrowType);
+      if (message.meta && message.meta.sectionHeading) {
+        shape.name = String(message.meta.sectionHeading);
+      }
+      if (typeof shape.setPluginData === 'function' && message.meta) {
+        shape.setPluginData('syncboard-git', JSON.stringify(message.meta));
+      }
+
+      broadcastSelection();
+      penpot.ui.sendMessage({
+        action: 'git-text-result',
+        requestId: message.requestId,
+        data: { id: shape.id, updated: true },
+      });
+    } catch (err) {
+      penpot.ui.sendMessage({
+        action: 'git-text-result',
+        requestId: message.requestId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    return;
   }
 });

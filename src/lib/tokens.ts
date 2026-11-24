@@ -46,6 +46,8 @@ type MiroStorageApi = {
 
 function getMiroStorageApi(): MiroStorageApi | null {
   if (typeof window === 'undefined') return null;
+  // Never call Miro SDK storage when running inside the FigJam mirror route
+  if (window.location?.pathname?.startsWith('/figjam-mirror')) return null;
 
   const storageCandidate = window.miro?.board?.storage as unknown;
   if (!storageCandidate || typeof storageCandidate !== 'object') return null;

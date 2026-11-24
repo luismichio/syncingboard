@@ -8,6 +8,7 @@ import { decodeHtmlEntities } from '@/lib/decodeHtmlEntities';
 import { formatDuration } from '@/lib/formatDuration';
 import { SyncedImage } from '@/app/miro-plugin/useMiroSelection';
 import type { SyncStatus, SyncStatusType } from '@/app/miro-plugin/useMiroPlugin';
+import { useFigJamGitHubDocs } from './useFigJamGitHubDocs';
 
 /**
  * FigJam target hook. The FigJam board is the destination; the plugin exposes
@@ -28,7 +29,14 @@ interface FigjamTracked {
   name?: string;
   format?: 'png' | 'svg';
   scale?: number;
-  platform?: 'figma' | 'penpot';
+  platform?: 'figma' | 'penpot' | 'github';
+  githubUrl?: string;
+  githubBranch?: string;
+  sectionId?: string;
+  sectionHeading?: string;
+  contentHash?: string;
+  etag?: string;
+  widgetType?: 'text' | 'shape' | 'sticky_note';
 }
 
 interface BridgeMsg {
@@ -176,23 +184,32 @@ function postToPlugin(msg: Record<string, unknown>): void {
 }
 
 function trackedToSynced(items: FigjamTracked[]): SyncedImage[] {
-  // One card per SELECTED image instance (duplicates are distinct board
+  // One card per SELECTED instance (duplicates are distinct board
   // nodes and count as separate selections — the SyncTab group badge shows
   // "xN"). Persisted per-instance format/scale/platform round-trip here.
   return items.map((t) => ({
     id: t.id || t.key || '',
     title: t.name || t.key || t.id || '',
-    fileKey: t.fileKey || '',
-    nodeId: t.nodeId || '',
-    nodeName: t.name || '',
+    fileKey: t.githubUrl || t.fileKey || '',
+    nodeId: t.sectionId || t.nodeId || '',
+    nodeName: t.sectionHeading || t.name || '',
     format: t.format || 'png',
     scale: t.scale || 1,
     platform: t.platform || 'figma',
+    ...(t.etag ? { etag: t.etag } : {}),
   }));
 }
 
 export function useFigJamPlugin() {
-  const { figmaToken, tokensLoading, connectFigma, disconnectFigma } = useAuthTokens(false);
+  const {
+    figmaToken,
+    githubToken,
+    tokensLoading,
+    connectFigma,
+    disconnectFigma,
+    connectGithub,
+    disconnectGithub,
+  } = useAuthTokens(false);
   const [rawSelectedItems, setRawSelectedItems] = useState<SyncedImage[]>([]);
   const selectionKey = useMemo(
     () => rawSelectedItems.map((i) => i.id).sort().join(','),
@@ -242,6 +259,17 @@ export function useFigJamPlugin() {
   // Foreign nodes (images placed by hand / other plugins): selected but not
   // SyncingBoard mirrors — the Import tab can still REPLACE them.
   const [foreignSelection, setForeignSelection] = useState<{ id: string; name: string }[]>([]);
+  const setDocStatus = useCallback((message: string, type: SyncStatusType) => {
+    setSyncStatus({ message, type });
+  }, []);
+  const selectedForeignIds = useMemo(() => foreignSelection.map((f) => f.id), [foreignSelection]);
+  const selectedTrackedIds = useMemo(() => selectedItems.map((i) => i.id), [selectedItems]);
+  const githubDocs = useFigJamGitHubDocs(
+    setDocStatus,
+    githubToken,
+    selectedForeignIds,
+    selectedTrackedIds
+  );
   // M3 live-push: opt-in toggle (OFF by default so the relay only runs on
   // explicit Detect presses — no quota burn without the user asking).
   const [liveFigmaSelection, setLiveFigmaSelection] = useState(false);
@@ -829,11 +857,37 @@ useEffect(() => {
   // 3-frame sync of one file costs exactly 1 Figma REST call.
   const syncSelectedScreens = useCallback(async () => {
     const MAX_IMAGES_PER_SYNC = 3;
-    const frames = selectedItems.filter((n) => n.fileKey && n.nodeId);
-    if (frames.length === 0) {
+    const githubItems = selectedItems.filter((n) => n.platform === 'github');
+    const frames = selectedItems.filter((n) => n.platform !== 'github' && n.fileKey && n.nodeId);
+    if (frames.length === 0 && githubItems.length === 0) {
       status('Nothing selected on the canvas', 'info');
       return;
     }
+
+    // Handle GitHub Docs-as-Code text widgets first (does not consume image batch slots)
+    let githubSummary = '';
+    if (githubItems.length > 0) {
+      status(`Syncing ${githubItems.length} GitHub doc widget(s)...`, 'progress');
+      setIsSyncing(true);
+      try {
+        const res = await githubDocs.syncGitHubItems(githubItems);
+        githubSummary =
+          res.updated > 0
+            ? `Updated ${res.updated} doc(s)`
+            : `All ${res.unchanged} doc(s) up to date`;
+      } catch (err) {
+        setIsSyncing(false);
+        status(noteError(err), 'error');
+        return;
+      }
+      if (frames.length === 0) {
+        setIsSyncing(false);
+        status(`✓ ${githubSummary}`, 'success');
+        postToPlugin({ action: 'get-selection-state' });
+        return;
+      }
+    }
+
     const byKey = new Map<string, SyncedImage[]>();
     for (const f of frames) {
       const k = `${f.fileKey}|${f.nodeId}`;
@@ -953,7 +1007,7 @@ useEffect(() => {
     // Re-read the selection so the plugin's updated meta (format/scale)
     // round-trips back into the cards.
     postToPlugin({ action: 'get-selection-state' });
-  }, [selectedItems, cachedFetch, noteError, renderBatchImages, placeOnBoard, status, preserveSize, syncAllCopies]);
+  }, [selectedItems, githubDocs, cachedFetch, noteError, renderBatchImages, placeOnBoard, status, preserveSize, syncAllCopies]);
 
 
   // ---- Replace a selected board node (Import → Replace Selected) ----
@@ -1151,6 +1205,7 @@ useEffect(() => {
     isInitMode: false,
     editorType,
     figmaToken,
+    githubToken,
     miroToken: null,
     tokensLoading,
     selectedItems,
@@ -1159,16 +1214,19 @@ useEffect(() => {
     handleDeselectGroup,
     handleClearDeselected,
     setSelectedItems: setRawSelectedItems,
-    isSyncing,
+    isSyncing: isSyncing || githubDocs.isSyncingDocs,
     syncStatus,
     figmaParseError,
     figmaInput,
     figmaNodeInfo,
     isDetectingLocal,
     connectFigma,
+    connectGithub,
     connectMiro: () => {},
     disconnectFigma,
+    disconnectGithub,
     disconnectMiro: async (): Promise<void> => undefined,
+    githubDocs,
     parseFigmaLink,
     detectLocalFigmaSelection,
     importFigmaScreen,

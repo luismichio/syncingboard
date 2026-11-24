@@ -47,7 +47,7 @@ SyncingBoard is deliberately built as a stateless proxy engine for key technical
 * **Preserve Widget Size:** Refresh image content without resizing, keeping manual crop/scale/layout adjustments.
 * **Hybrid Batch Limits:** Up to **3 unique frames** per sync on Cloud Community; lifted to **50 Figma frames** per sync when connected locally via **SyncingBridge** (while Penpot remains at 3 to protect Cloud Relay quotas).
 * **Dual-Platform Sync:** Supports **Figma** (local zero-cloud via SyncingBridge or cloud-native) and **Penpot** (relay-first sync) side-by-side.
-* **GitHub Docs-as-Code Text Sync (Miro MVP):** Import and update Markdown sections from public or private GitHub repos (via GitHub OAuth in Settings) directly into Miro `text`, `shape`, and `sticky_note` widgets in place, with inline section switching in the Sync tab.
+* **GitHub Docs-as-Code Text Sync (Miro, FigJam & Penpot):** Import and update Markdown sections from public or private GitHub repos (via GitHub OAuth in Settings) directly into Miro, FigJam, and Penpot text/sticky/shape widgets in place, with inline section switching in the Sync tab.
 * **Live Selection Auto-Detect:** Detects active selections from companion plugins via Cloud Relay — or **instant live auto-detect** over local WebSocket/SSE with SyncingBridge (zero Ably/Upstash cost).
 * **FigJam App Target:** The full SyncingBoard panel also runs inside **FigJam** (Figma whiteboards) — in-place updates, Replace Selected, Penpot sync, and live selection relay — with no Miro board required (shipped 0.16.1, M1).
 * **Cloud Relay Transport:** Public HTTPS relay (Ably + Upstash Redis + Vercel) coordinates between companions and the Miro plugin — no localhost calls, no PNA blocks, works in any browser.
@@ -65,7 +65,7 @@ SyncingBoard is deliberately built as a stateless proxy engine for key technical
 | **Replace Selected (Adopt Image)** | Browser or Desktop | Browser or Desktop | **Shipped** |
 | **FigJam App (Target)** | FigJam (Figma Plugin) | Runs inside FigJam | **Shipped** (hosted panel: sync / import / replace; PNG-only) |
 | **Figma / Miro / GitHub Login (OAuth)** | Any browser | Browser or Desktop | **Shipped** (Stateless OAuth polling) |
-| **GitHub Docs-as-Code Text Sync** | Public & Private GitHub `.md` | Browser or Desktop | **Shipped (Miro MVP)** (In-place `text`/`shape`/`sticky_note` + Section switcher) |
+| **GitHub Docs-as-Code Text Sync** | Public & Private GitHub `.md` | Miro, FigJam & Penpot | **Shipped** (In-place text/sticky/shape sync + Section switcher + Penpot `getRange` styling) |
 | **Zero-Cloud Local Sync & Large Images (>4.5MB)** | Figma Desktop | Miro Desktop | **Shipped** (via SyncingBridge — 50 MB limit, 0 Figma REST / Vercel / Ably calls) |
 | **Configurable Global Shortcuts** | Figma Desktop | Miro Desktop | **Shipped** (via SyncingBridge — `Ctrl/Cmd+Shift+I/R/S`) |
 | **Adobe UXP / Local LLMs / Two-Way Sync** | Desktop apps | Browser or Desktop | **Planned** (SyncingBridge capability extender) |

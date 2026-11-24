@@ -10,6 +10,7 @@ export interface SyncedImage {
   format?: 'png' | 'svg';
   scale?: number;
   platform?: 'figma' | 'penpot' | 'github';
+  etag?: string;
 }
 
 /**

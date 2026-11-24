@@ -107,15 +107,20 @@ export function useAuthTokens(isInitMode: boolean | null) {
         setTokensLoading(true);
       }
 
-      await waitForMiro();
-      if (!active) return;
+      const isFigJamMirror =
+        typeof window !== 'undefined' &&
+        window.location?.pathname?.startsWith('/figjam-mirror');
+      if (!isFigJamMirror) {
+        await waitForMiro();
+        if (!active) return;
+      }
 
       let fToken: string | null = null;
       let mToken: string | null = null;
 
       try {
         fToken = await getValidToken('figma');
-        mToken = await getValidToken('miro');
+        mToken = isFigJamMirror ? null : await getValidToken('miro');
         const gToken = await getValidToken('github');
 
         if (!active) return;

@@ -70,9 +70,15 @@ export function initCompanionRuntime(options: CompanionRuntimeOptions): void {
 
   // DOM Elements - Navigation
   const tabBtnSync = document.getElementById('tab-btn-sync') as HTMLButtonElement | null;
+  const tabBtnDocs = document.getElementById('tab-btn-docs') as HTMLButtonElement | null;
   const tabBtnSettings = document.getElementById('tab-btn-settings') as HTMLButtonElement | null;
   const viewSync = document.getElementById('view-sync') as HTMLElement | null;
+  const viewDocs = document.getElementById('view-docs') as HTMLElement | null;
   const viewSettings = document.getElementById('view-settings') as HTMLElement | null;
+
+  if (platform === 'penpot' && tabBtnDocs) {
+    tabBtnDocs.style.display = '';
+  }
 
   // DOM Elements - Controls & Status
   const pairingInput = document.getElementById('pairing-id') as HTMLInputElement | null;
@@ -136,21 +142,17 @@ export function initCompanionRuntime(options: CompanionRuntimeOptions): void {
   });
 
   // Tab Navigation Handling
-  function switchTab(tab: 'sync' | 'settings'): void {
-    if (tab === 'sync') {
-      tabBtnSync?.classList.add('active');
-      tabBtnSettings?.classList.remove('active');
-      viewSync?.classList.add('active');
-      viewSettings?.classList.remove('active');
-    } else {
-      tabBtnSync?.classList.remove('active');
-      tabBtnSettings?.classList.add('active');
-      viewSync?.classList.remove('active');
-      viewSettings?.classList.add('active');
-    }
+  function switchTab(tab: 'sync' | 'docs' | 'settings'): void {
+    tabBtnSync?.classList.toggle('active', tab === 'sync');
+    tabBtnDocs?.classList.toggle('active', tab === 'docs');
+    tabBtnSettings?.classList.toggle('active', tab === 'settings');
+    viewSync?.classList.toggle('active', tab === 'sync');
+    viewDocs?.classList.toggle('active', tab === 'docs');
+    viewSettings?.classList.toggle('active', tab === 'settings');
   }
 
   tabBtnSync?.addEventListener('click', () => switchTab('sync'));
+  tabBtnDocs?.addEventListener('click', () => switchTab('docs'));
   tabBtnSettings?.addEventListener('click', () => switchTab('settings'));
 
   function log(message: string): void {

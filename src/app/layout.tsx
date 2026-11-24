@@ -152,12 +152,6 @@ export default function RootLayout({
             __html: `if (!window.__sbSkipGA) { window.dataLayer = window.dataLayer || []; function gtag(){dataLayer.push(arguments);} gtag('js', new Date()); gtag('config', 'G-Q4W94QDWWC'); }`,
           }}
         />
-        {/* Miro Web SDK */}
-        <Script
-          src="https://miro.com/app/static/sdk/v2/miro.js"
-          strategy="beforeInteractive"
-        />
-
         {children}
         <CookieConsent />
       </body>

@@ -462,6 +462,7 @@
     <!-- Tab Bar -->
     <div class="tab-bar">
       <button id="tab-btn-sync" class="tab-btn active" type="button">SYNC</button>
+      <button id="tab-btn-docs" class="tab-btn" type="button" style="display: none;">DOCS</button>
       <button id="tab-btn-settings" class="tab-btn" type="button">SETTINGS</button>
     </div>
 
@@ -526,6 +527,51 @@
       </div>
     </div>
 
+    <!-- TAB 1B: GITHUB DOCS-AS-CODE VIEW (Penpot Target) -->
+    <div id="view-docs" class="tab-content">
+      <!-- Selected Bound Text Shape Card (shown when a bound Penpot Text shape is selected) -->
+      <div id="docs-selected-card" style="display: none; flex-direction: column; gap: 6px; margin-bottom: 10px;">
+        <div class="section-label">Selected Bound Doc</div>
+        <div class="card" style="display: flex; flex-direction: column; gap: 6px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
+            <span id="docs-selected-title" style="font-size: 11px; font-weight: 600; color: var(--text-page); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"></span>
+            <span style="font-size: 8px; font-family: monospace; color: var(--accent); padding: 1px 4px; border: 1px solid var(--accent); border-radius: 3px;">GITHUB</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 4px;">
+            <a id="docs-selected-url" href="#" target="_blank" rel="noopener noreferrer" style="flex: 1; font-size: 9px; font-family: monospace; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-decoration: none;" title="Open on GitHub"></a>
+            <a id="docs-selected-open-btn" href="#" target="_blank" rel="noopener noreferrer" class="btn-clear" style="font-size: 8px; padding: 1px 5px; text-decoration: none; display: inline-flex; align-items: center;" title="Open GitHub file">OPEN</a>
+            <button id="docs-selected-copy-btn" type="button" class="btn-clear" style="font-size: 8px; padding: 1px 5px;" title="Copy GitHub URL">COPY</button>
+          </div>
+          <select id="docs-selected-section" style="width: 100%; font-size: 10px; background: var(--bg-page); border: 1px solid var(--border-card); border-radius: 4px; padding: 5px 6px; color: var(--text-page);"></select>
+          <button id="docs-sync-selected-btn" class="btn-target-connect" type="button" style="width: 100%;">SYNC SELECTED</button>
+        </div>
+      </div>
+
+      <div class="section-label">GitHub Markdown Source</div>
+      <div class="card" style="display: flex; flex-direction: column; gap: 8px;">
+        <div style="display: flex; gap: 6px;">
+          <input type="text" id="docs-github-url" placeholder="https://github.com/org/repo/blob/main/README.md" style="flex: 1; font-size: 10px; font-family: monospace; background: var(--bg-page); border: 1px solid var(--border-card); border-radius: 4px; padding: 6px 8px; color: var(--text-page);" />
+          <button id="docs-load-btn" class="btn-target-connect" type="button">LOAD</button>
+        </div>
+        <input type="password" id="docs-github-pat" placeholder="Optional GitHub PAT (or connect in Settings)" style="width: 100%; box-sizing: border-box; font-size: 10px; font-family: monospace; background: var(--bg-page); border: 1px solid var(--border-card); border-radius: 4px; padding: 5px 8px; color: var(--text-page);" />
+        <div id="docs-section-wrap" style="display: none; flex-direction: column; gap: 6px;">
+          <select id="docs-section-select" style="width: 100%; font-size: 10px; background: var(--bg-page); border: 1px solid var(--border-card); border-radius: 4px; padding: 6px 8px; color: var(--text-page);"></select>
+          <div style="display: flex; gap: 6px;">
+            <button id="docs-place-btn" class="btn-target-connect" type="button" style="flex: 1;">PLACE TEXT</button>
+            <button id="docs-bind-btn" class="btn-target-connect" type="button" style="flex: 1;">BIND SELECTED</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-label">Page Sync</div>
+      <div class="card" style="display: flex; flex-direction: column; gap: 6px;">
+        <button id="docs-sync-all-btn" class="btn-target-connect" type="button" style="width: 100%;">SYNC ALL BOUND DOCS</button>
+        <div id="docs-status-text" style="font-size: 10px; color: var(--text-muted); line-height: 1.4;">
+          Load a GitHub .md file to place or bind Penpot Text shapes.
+        </div>
+      </div>
+    </div>
+
     <!-- TAB 2: SETTINGS VIEW -->
     <div id="view-settings" class="tab-content">
       <!-- Integrations (Merged with Connection Status) -->
@@ -572,6 +618,17 @@
           <div class="status-indicator">
             <span id="plugin-dot" class="status-dot"></span>
             <span id="plugin-text" class="status-state-text">Unknown</span>
+          </div>
+        </div>
+        <div id="github-oauth-divider" style="display: none; border-top: 1px solid var(--border-card); margin: 2px 0;"></div>
+        <div id="github-oauth-row" class="status-row" style="display: none;">
+          <div class="status-left">
+            <span class="status-title">GitHub Status</span>
+            <span id="github-status-text" class="status-desc">Not connected (public repos only)</span>
+          </div>
+          <div class="status-indicator" style="gap: 6px;">
+            <span id="github-dot" class="status-dot"></span>
+            <button id="github-connect-btn" class="btn-target-connect" type="button">CONNECT</button>
           </div>
         </div>
       </div>

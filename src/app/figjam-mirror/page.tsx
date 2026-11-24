@@ -30,9 +30,11 @@ function buildGroupedItems(selectedItems: SyncedImage[]): GroupedSyncedImage[] {
     if (!groups[key]) {
       const platform = item.platform || 'figma';
       const sourceUrl =
-        platform === 'figma' && item.fileKey && item.nodeId
-          ? `https://www.figma.com/file/${item.fileKey}/?node-id=${encodeURIComponent(item.nodeId)}`
-          : undefined;
+        platform === 'github'
+          ? item.fileKey
+          : platform === 'figma' && item.fileKey && item.nodeId
+            ? `https://www.figma.com/file/${item.fileKey}/?node-id=${encodeURIComponent(item.nodeId)}`
+            : undefined;
       groups[key] = {
         key,
         fileKey: item.fileKey,
@@ -158,6 +160,17 @@ export default function FigJamPluginPage() {
     hook.applyGroupSettings(ids, key, value);
   };
 
+  const onGitHubSectionChange = async (
+    itemIds: string[],
+    sectionId: string,
+    sectionTitle: string
+  ): Promise<void> => {
+    const match = hook.selectedItems.find((i) => itemIds.includes(i.id));
+    const url = match?.fileKey || '';
+    if (!url) return;
+    await hook.githubDocs.retargetGitHubSection(itemIds, url, sectionId, sectionTitle);
+  };
+
   const onRefreshNodeName = async (): Promise<void> => {
     // Node name refreshes flow through the Figma source during the next sync.
   };
@@ -182,6 +195,7 @@ export default function FigJamPluginPage() {
             hasMiroToken={true}
             onSync={hook.syncSelectedScreens}
             onGroupSettingChange={onGroupSettingChange}
+            onGitHubSectionChange={onGitHubSectionChange}
             onRefreshNodeName={onRefreshNodeName}
             onRemoveGroup={hook.handleDeselectGroup}
             availableScales={AVAILABLE_SCALES}
@@ -219,6 +233,22 @@ export default function FigJamPluginPage() {
             onResetCache={hook.resetRenderCache}
             onClearFigmaNodeInfo={hook.resetImportState}
             onClearPenpotNodeInfo={hook.resetImportState}
+            githubDocs={{
+              githubUrl: hook.githubDocs.githubUrl,
+              setGithubUrl: hook.githubDocs.setGithubUrl,
+              githubPat: hook.githubDocs.githubPat,
+              updateGithubPat: hook.githubDocs.setGithubPat,
+              docData: hook.githubDocs.docData,
+              selectedSectionId: hook.githubDocs.selectedSectionId,
+              setSelectedSectionId: hook.githubDocs.setSelectedSectionId,
+              isLoadingDoc: hook.githubDocs.isLoadingDoc,
+              isSyncingDocs: hook.githubDocs.isSyncingDocs,
+              docError: hook.githubDocs.docError,
+              loadGitHubDoc: hook.githubDocs.loadDoc,
+              placeTextOnBoard: hook.githubDocs.placeAsText,
+              bindSelectedTextWidget: hook.githubDocs.bindSelectedWidgets,
+              syncSelectedGitHubDocs: hook.syncSelectedScreens,
+            }}
           />
         )}
         {activeTab === 'settings' && (
@@ -226,10 +256,13 @@ export default function FigJamPluginPage() {
             tokensLoading={hook.tokensLoading}
             figmaToken={hook.figmaToken}
             miroToken={null}
+            githubToken={hook.githubToken}
             connectFigma={hook.connectFigma}
             connectMiro={() => {}}
+            connectGithub={hook.connectGithub}
             disconnectFigma={hook.disconnectFigma}
             disconnectMiro={hook.disconnectMiro}
+            disconnectGithub={hook.disconnectGithub}
             hideMiro
             copiedPairing={copiedPairing}
             pairingId={pairingId}
