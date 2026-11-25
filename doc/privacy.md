@@ -26,7 +26,7 @@ We process minimal operational data to keep the service running, secure, and fun
 **We do NOT store:**
 - Your Figma, Penpot, Miro, or GitHub design files, frames, or private Markdown content
 - Your exported images or SVGs
-- Your Figma, Miro, or GitHub OAuth access/refresh tokens or Personal Access Tokens (stored only in your browser's `localStorage`)
+- Your Figma, Miro, or GitHub OAuth access/refresh tokens or Personal Access Tokens (stored only in your browser's `localStorage`; the hosted [SyncingBoard GitHub App](https://github.com/apps/syncingboard) requests read-only repository contents permission and can be scoped to individual repositories)
 - Your name, email, or account credentials
 - Any personal identification beyond IP address
 
