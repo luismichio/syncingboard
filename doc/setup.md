@@ -365,6 +365,12 @@ For testing and coding on your local machine (commands work on Windows, macOS, a
    UPSTASH_REDIS_REST_URL=https://your-upstash-endpoint.upstash.io
    UPSTASH_REDIS_REST_TOKEN=your_upstash_token
    ABLY_API_KEY=your_ably_key
+
+   # Optional — GitHub Docs-as-Code OAuth for private repositories
+   GITHUB_CLIENT_ID=your_github_client_id
+   GITHUB_CLIENT_SECRET=your_github_client_secret
+   # Leave blank for GitHub App (read-only Contents); omit to default to `repo` for classic OAuth Apps
+   GITHUB_OAUTH_SCOPE=
    ```
 
 3. **Expose Localhost via HTTPS Tunnel (Required for Miro Integration Testing):**
