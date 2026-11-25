@@ -47,11 +47,11 @@ SyncingBoard is deliberately built as a stateless proxy engine for key technical
 * **Preserve Widget Size:** Refresh image content without resizing, keeping manual crop/scale/layout adjustments.
 * **Hybrid Batch Limits:** Up to **3 unique frames** per sync on Cloud Community; lifted to **50 Figma frames** per sync when connected locally via **SyncingBridge** (while Penpot remains at 3 to protect Cloud Relay quotas).
 * **Dual-Platform Sync:** Supports **Figma** (local zero-cloud via SyncingBridge or cloud-native) and **Penpot** (relay-first sync) side-by-side.
-* **GitHub Docs-as-Code Text Sync (Miro, FigJam & Penpot):** Import and update Markdown sections from public or private GitHub repos (via GitHub OAuth in Settings) directly into Miro, FigJam, and Penpot text/sticky/shape widgets in place, with inline section switching in the Sync tab.
+* **GitHub Docs-as-Code Text Sync (Miro, FigJam & Penpot):** Import and update Markdown sections from public or private GitHub repos (via the read-only [SyncingBoard GitHub App](https://github.com/apps/syncingboard) in Settings) directly into Miro, FigJam, and Penpot text/sticky/shape widgets in place, with inline branch & section switching in the Sync tab.
 * **Live Selection Auto-Detect:** Detects active selections from companion plugins via Cloud Relay — or **instant live auto-detect** over local WebSocket/SSE with SyncingBridge (zero Ably/Upstash cost).
 * **FigJam App Target:** The full SyncingBoard panel also runs inside **FigJam** (Figma whiteboards) — in-place updates, Replace Selected, Penpot sync, and live selection relay — with no Miro board required (shipped 0.16.1, M1).
 * **Cloud Relay Transport:** Public HTTPS relay (Ably + Upstash Redis + Vercel) coordinates between companions and the Miro plugin — no localhost calls, no PNA blocks, works in any browser.
-* **Automated Test Coverage:** 220 Vitest unit and integration tests validating token security, rate-limiting logic, Markdown parsing/compiling, GitHub routes/OAuth, bridge validation, batch limits, URL parsers, and API route handlers (`yarn test`).
+* **Automated Test Coverage:** 224 Vitest unit and integration tests validating token security, rate-limiting logic, Markdown parsing/compiling, GitHub routes/OAuth, bridge validation, batch limits, URL parsers, and API route handlers (`yarn test`).
 * **SyncingBridge Desktop App (Optional Zero-Cloud Engine):** Native Rust/Tauri v2 desktop app (`ws://localhost:4401`) providing local Figma `exportAsync()` (0 Figma REST API calls), direct 50 MB Miro image `PATCH` uploads (0 Vercel calls), live Figma auto-detect, and configurable OS-wide global shortcuts (`Ctrl/Cmd+Shift+I/R/S`). Not required for cloud sync.
 
 ### Integration & Compatibility Matrix

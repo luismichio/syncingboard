@@ -133,7 +133,10 @@ If the Penpot Companion plugin shows "offline" in the Miro plugin:
 
 ## Source Adapter: GitHub Docs-as-Code (Optional — Private Repos)
 
-Public GitHub Markdown files work out of the box with zero configuration. To let users sync **private** GitHub repositories via one-click **Connect GitHub** in Settings, create a GitHub App (recommended) or OAuth App:
+Public GitHub Markdown files work out of the box with zero configuration.
+
+- **Using the hosted Community app (`syncingboard.com`):** Install the read-only **[SyncingBoard GitHub App](https://github.com/apps/syncingboard)** on the specific private repository (or repositories) you want to sync, then click **Connect GitHub** in **Settings → GitHub Status**.
+- **Self-hosting:** To let users sync **private** GitHub repositories via one-click **Connect GitHub** in Settings, create your own GitHub App (recommended) or OAuth App:
 
 ### Register GitHub App (Recommended — Read-Only)
 1. Go to **GitHub → Settings → Developer settings → GitHub Apps → New GitHub App**.
@@ -477,8 +480,10 @@ Download the latest **SyncingBridge** installer from **[GitHub Releases (Latest)
    - Via GitHub Actions: push a `v*` tag (or trigger **Release Tauri Bridge** manually from the GitHub Actions tab) to compile native `.msi`/`.exe`, `.dmg`, and `.AppImage`/`.deb` installers automatically.
 
 ### Transport Behavior & Settings
-* **Hybrid Dual-Transport:** When `SyncingBridge (Local)` is enabled in Miro Settings, **Figma Desktop** routes 100% locally (`ws://localhost:4401` + `node.exportAsync()` + Rust Miro `PATCH`), while **Penpot Web** automatically routes over **Ably Cloud Relay** (due to Chrome Local Network Access iframe rules) so both coexist seamlessly.
-* **Configurable Broker Port:** Default `4401` (adjustable in **SyncingBridge → Settings** and Miro/Companion Settings).
+* **Hosted `syncingboard.com` (Ably Control Channel — Default):** Because Miro's cross-origin app iframe blocks direct loopback (`localhost` / `127.0.0.1`) under Chromium Local Network Access (LNA), **SyncingBridge** automatically opens an idle-zero outbound **Ably Control Channel** (only active while Figma Companion is connected locally) so hosted Miro Desktop/Chrome/Safari can send tiny JSON commands (`health`, `select`, `sync-image`, debounced live selection, and global hotkeys). All heavy work — Figma `node.exportAsync()` and direct **50 MB** Rust Miro `PATCH` uploads — still runs 100% locally (**0 Figma REST calls, 0 Vercel calls, 0 Ably image bytes**).
+* **Self-Hosted Local (`yarn local:tauri` — 0 Ably):** When running SyncingBoard locally, Miro connects over Tier 1 same-origin `/api/bridge/*` and SyncingBridge automatically closes/skips its Ably socket (**0 Ably connections**). You can also disable the **Cloud Control Channel** toggle in **SyncingBridge → Settings** for strictly offline self-hosting.
+* **Hybrid Dual-Transport:** When `SyncingBridge (Local)` is enabled in Miro Settings, **Figma Desktop** routes through SyncingBridge, while **Penpot Web** automatically routes over **Ably Cloud Relay** so both coexist seamlessly.
+* **Configurable Broker Port:** Default `4401` (adjustable in **SyncingBridge → Settings** and Miro/Companion Settings; server-side `/api/bridge/*` allows ports `4401–4410`).
 * **Configurable Global Shortcuts:** Default `Ctrl+Shift+I` / `Cmd+Shift+I` (Import), `Ctrl+Shift+R` / `Cmd+Shift+R` (Replace), `Ctrl+Shift+S` / `Cmd+Shift+S` (Sync) — click any shortcut box in **SyncingBridge → Settings** to record a custom combo within a 4-second window (or press `Backspace` to disable).
 
 **Troubleshooting --- DNS Rebinding Protection:**

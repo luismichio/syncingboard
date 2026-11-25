@@ -127,6 +127,6 @@ The 0.15.2 release rebalances the *actual* consumers (companions are the persist
 ## How Tauri (`SyncingBridge`) Reduces Infrastructure Costs
 
 When the optional Tauri desktop app is active for Figma Desktop ↔ Miro Desktop:
-* **Zero Ably & Upstash Relay Usage:** Selection streaming, commands, and global shortcuts run over local `ws://localhost:4401` and same-origin SSE (`/api/bridge/stream`), immediately releasing the user's cloud relay slot lease (`releaseLocalRelaySession()`).
+* **Zero / Minimal Ably & Upstash Relay Usage:** When self-hosted locally (`yarn local:tauri`), selection streaming, commands, and global shortcuts run 100% over local `ws://localhost:4401` and same-origin SSE (`/api/bridge/stream`), immediately releasing the user's cloud relay slot lease (`releaseLocalRelaySession()`, **0 Ably**). On hosted `syncingboard.com`, SyncingBridge uses an idle-zero Ably Control Channel (reusing Figma Companion's single socket only while Figma is connected) for tiny JSON commands — **0 image bytes** ever cross Ably or Upstash.
 * **Zero Figma REST API Calls (Open Files):** Figma Companion renders frames locally via `node.exportAsync()`, bypassing Figma's Starter 20/month REST API cap and Professional 10/min rate limits (falling back to `/api/figma/render-batch` only for closed files).
 * **Direct 50 MB Miro Multipart Uploads:** Tauri's `POST /miro/update-image` streams image binaries directly from Rust to `api.miro.com/v2`, completely bypassing Vercel's 4.5MB serverless body limit and `updateImagePerMin: 10` community cap.
