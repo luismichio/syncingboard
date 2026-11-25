@@ -1,6 +1,6 @@
 {
   "name": "SyncingBoard Companion",
-  "description": "Bridges local Penpot workspaces with Miro SyncingBoard selection queries.",
+  "description": "Sync Penpot frames to Miro & FigJam and pull live GitHub Markdown docs directly into Penpot text shapes.",
   "code": "penpot-companion-plugin.js?v=2",
   "icon": "syncingboard_logo.svg",
   "permissions": [
