@@ -15,6 +15,17 @@ export interface TauriBridgeHealth {
   wsUrl: string;
 }
 
+let resolvedBridgeHost: 'localhost' | '127.0.0.1' = '127.0.0.1';
+let lastProbeDiagnostics: string[] = [];
+
+export function getLastBridgeProbeDiagnostics(): string[] {
+  return [...lastProbeDiagnostics];
+}
+
+export function getResolvedBridgeHost(): 'localhost' | '127.0.0.1' {
+  return resolvedBridgeHost;
+}
+
 export function getConfiguredBridgePort(): string {
   if (typeof window === 'undefined') return String(DEFAULT_BRIDGE_PORT);
   try {
@@ -35,7 +46,7 @@ export async function notifyTauriMiroConnect(): Promise<void> {
   if (typeof window === 'undefined') return;
   const port = getConfiguredBridgePort();
   try {
-    const res = await fetch(`http://127.0.0.1:${port}/miro/connect`, {
+    const res = await fetch(`http://${resolvedBridgeHost}:${port}/miro/connect`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       signal: AbortSignal.timeout(2000),
@@ -78,7 +89,7 @@ export async function updateMiroImageViaTauri(
   if (typeof window === 'undefined') return null;
   const port = getConfiguredBridgePort();
   try {
-    const res = await fetch(`http://127.0.0.1:${port}/miro/update-image`, {
+    const res = await fetch(`http://${resolvedBridgeHost}:${port}/miro/update-image`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -105,7 +116,8 @@ export async function updateMiroImageViaTauri(
 export async function probeTauriBridge(timeoutMs = 2000): Promise<TauriBridgeHealth | null> {
   if (typeof window === 'undefined') return null;
   const port = getConfiguredBridgePort();
-  const wsEndpoint = `ws://127.0.0.1:${port}/ws`;
+  const diagnostics: string[] = [];
+  lastProbeDiagnostics = diagnostics;
 
   // 1. Primary: relative Next.js backend proxy (/api/bridge/health)
   try {
@@ -120,101 +132,117 @@ export async function probeTauriBridge(timeoutMs = 2000): Promise<TauriBridgeHea
       if (data && data.status === 'ok') {
         return data;
       }
+      diagnostics.push(`${healthPath}: invalid payload`);
+    } else {
+      diagnostics.push(`${healthPath}: HTTP ${res.status}`);
     }
-  } catch {
-    // Fall through to direct WS/HTTP probes
+  } catch (err: unknown) {
+    diagnostics.push(`/api/bridge/health: ${err instanceof Error ? err.message : String(err)}`);
   }
 
-  // 2. Secondary: direct WebSocket probe to 127.0.0.1:<port>
+  // 2. Secondary: direct WebSocket probe (try localhost first, then 127.0.0.1)
+  const hosts: Array<'localhost' | '127.0.0.1'> = ['localhost', '127.0.0.1'];
   if (typeof WebSocket !== 'undefined') {
-    const wsResult = await new Promise<TauriBridgeHealth | null>((resolve) => {
-      let resolved = false;
-      let ws: WebSocket | null = null;
+    for (const host of hosts) {
+      const wsEndpoint = `ws://${host}:${port}/ws`;
+      const wsResult = await new Promise<TauriBridgeHealth | null>((resolve) => {
+        let resolved = false;
+        let ws: WebSocket | null = null;
 
-      const cleanup = () => {
-        if (ws) {
-          try { ws.close(); } catch {}
-          ws = null;
-        }
-      };
-
-      const timer = setTimeout(() => {
-        if (!resolved) {
-          resolved = true;
-          cleanup();
-          resolve(null);
-        }
-      }, timeoutMs);
-
-      try {
-        ws = new WebSocket(wsEndpoint);
-
-        ws.onopen = () => {
-          ws?.send(JSON.stringify({ action: 'health' }));
-        };
-
-        ws.onmessage = (ev) => {
-          if (resolved) return;
-          try {
-            const data = JSON.parse(ev.data) as {
-              action?: string;
-              status?: string;
-              version?: string;
-              figmaConnected?: boolean;
-              miroConnected?: boolean;
-              sessions?: number;
-              wsUrl?: string;
-            };
-            if (data.action === 'health-result' || data.status === 'ok') {
-              resolved = true;
-              clearTimeout(timer);
-              cleanup();
-              resolve({
-                status: data.status || 'ok',
-                version: data.version || '0.17.2',
-                figmaConnected: Boolean(data.figmaConnected),
-                miroConnected: Boolean(data.miroConnected),
-                sessions: data.sessions || 0,
-                wsUrl: data.wsUrl || wsEndpoint,
-              });
-            }
-          } catch {
-            // ignore
+        const cleanup = () => {
+          if (ws) {
+            try { ws.close(); } catch {}
+            ws = null;
           }
         };
 
-        ws.onerror = () => {
+        const timer = setTimeout(() => {
           if (!resolved) {
             resolved = true;
+            diagnostics.push(`${wsEndpoint}: timeout (${timeoutMs}ms)`);
+            cleanup();
+            resolve(null);
+          }
+        }, timeoutMs);
+
+        try {
+          ws = new WebSocket(wsEndpoint);
+
+          ws.onopen = () => {
+            ws?.send(JSON.stringify({ action: 'health' }));
+          };
+
+          ws.onmessage = (ev) => {
+            if (resolved) return;
+            try {
+              const data = JSON.parse(ev.data) as {
+                action?: string;
+                status?: string;
+                version?: string;
+                figmaConnected?: boolean;
+                miroConnected?: boolean;
+                sessions?: number;
+                wsUrl?: string;
+              };
+              if (data.action === 'health-result' || data.status === 'ok') {
+                resolved = true;
+                clearTimeout(timer);
+                cleanup();
+                resolvedBridgeHost = host;
+                resolve({
+                  status: data.status || 'ok',
+                  version: data.version || '0.18.0',
+                  figmaConnected: Boolean(data.figmaConnected),
+                  miroConnected: Boolean(data.miroConnected),
+                  sessions: data.sessions || 0,
+                  wsUrl: data.wsUrl || wsEndpoint,
+                });
+              }
+            } catch {
+              // ignore
+            }
+          };
+
+          ws.onerror = () => {
+            if (!resolved) {
+              resolved = true;
+              diagnostics.push(`${wsEndpoint}: blocked/error`);
+              clearTimeout(timer);
+              cleanup();
+              resolve(null);
+            }
+          };
+        } catch (err: unknown) {
+          if (!resolved) {
+            resolved = true;
+            diagnostics.push(`${wsEndpoint}: ${err instanceof Error ? err.message : String(err)}`);
             clearTimeout(timer);
             cleanup();
             resolve(null);
           }
-        };
-      } catch {
-        if (!resolved) {
-          resolved = true;
-          clearTimeout(timer);
-          cleanup();
-          resolve(null);
         }
-      }
-    });
+      });
 
-    if (wsResult) return wsResult;
+      if (wsResult) return wsResult;
+    }
   }
 
-  // 3. Tertiary: direct HTTP probe
-  try {
-    const res = await fetch(`http://127.0.0.1:${port}/health`, {
-      method: 'GET',
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-    if (res.ok) {
-      return (await res.json()) as TauriBridgeHealth;
+  // 3. Tertiary: direct HTTP probe (try localhost first, then 127.0.0.1)
+  for (const host of hosts) {
+    const httpEndpoint = `http://${host}:${port}/health`;
+    try {
+      const res = await fetch(httpEndpoint, {
+        method: 'GET',
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      if (res.ok) {
+        resolvedBridgeHost = host;
+        return (await res.json()) as TauriBridgeHealth;
+      }
+      diagnostics.push(`${httpEndpoint}: HTTP ${res.status}`);
+    } catch (err: unknown) {
+      diagnostics.push(`${httpEndpoint}: ${err instanceof Error ? err.message : String(err)}`);
     }
-  } catch {
-    // Final fail
   }
 
   return null;
@@ -240,7 +268,7 @@ export class TauriLocalRelayConnection {
     return new Promise((resolve) => {
       try {
         const port = getConfiguredBridgePort();
-        const wsUrl = `ws://127.0.0.1:${port}/ws`;
+        const wsUrl = `ws://${resolvedBridgeHost}:${port}/ws`;
         const socket = new WebSocket(wsUrl);
 
         const timeout = setTimeout(() => {
