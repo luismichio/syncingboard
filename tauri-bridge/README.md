@@ -4,10 +4,10 @@ Optional local zero-cloud companion broker for **SyncingBoard** (`ws://127.0.0.1
 
 > **Note:** SyncingBridge is **not required** for cloud sync (Figma, Penpot, or GitHub Markdown docs).
 
-## Current Distribution Status
+## Download & Distribution Notes
 
-- **Pre-built binaries are not yet published** on GitHub Releases; run or build from source using the commands below.
-- **Unsigned builds:** Automated GitHub Actions releases (`.github/workflows/release-tauri.yml`) do not yet include Apple notarization or Windows Authenticode signing. See [doc/setup.md](../doc/setup.md#current-distribution--os-security-notes) for macOS Gatekeeper (`xattr -cr`) and Windows SmartScreen instructions.
+- **Pre-built installers:** Download the latest Windows (`.exe`/`.msi`), macOS Apple Silicon (`.dmg`), and Linux (`.AppImage`/`.deb`/`.rpm`) builds from **[GitHub Releases](https://github.com/luismichio/syncingboard/releases/latest)**.
+- **Unsigned builds:** Automated GitHub Actions releases (`.github/workflows/release-tauri.yml`) do not yet include Apple notarization or Windows Authenticode signing. See [doc/setup.md](../doc/setup.md#download-pre-built-installer--os-security-notes) for macOS Gatekeeper (`xattr -cr`) and Windows SmartScreen instructions.
 
 ## Development & Local Build
 

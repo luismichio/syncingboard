@@ -122,7 +122,7 @@ SyncingBoard runs on a deliberately minimal, serverless-friendly stack. Here is 
 
 > **Full setup & deployment guide -> [doc/setup.md](./doc/setup.md)**
 >
-> **Tauri/SyncingBridge setup -> [doc/setup.md#tauri-desktop-app-syncingbridge-optional](./doc/setup.md#tauri-desktop-app-syncingbridge-optional)**
+> **Tauri/SyncingBridge setup & downloads -> [doc/setup.md#tauri-desktop-app-syncingbridge-optional](./doc/setup.md#tauri-desktop-app-syncingbridge-optional) | [GitHub Releases](https://github.com/luismichio/syncingboard/releases/latest)**
 >
 > **Architecture reference -> [doc/architecture.md](./doc/architecture.md)**
 
