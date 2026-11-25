@@ -10,6 +10,12 @@ export default defineConfig(async () => ({
   //
   // 1. prevent Vite from obscuring rust errors
   clearScreen: false,
+  // Prevent Vite from walking up to the parent Next.js postcss.config.mjs (which requires @tailwindcss/postcss)
+  css: {
+    postcss: {
+      plugins: [],
+    },
+  },
   // 2. tauri expects a fixed port, fail if that port is not available
   server: {
     port: 1420,

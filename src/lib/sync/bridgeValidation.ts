@@ -11,6 +11,48 @@ export const MIN_BRIDGE_TIMEOUT_MS = 1000;
 export const MAX_BRIDGE_TIMEOUT_MS = 30000;
 
 /**
+ * Static allowlist of loopback origins for server-side /api/bridge/* routes (ports 4401–4410).
+ * Using literal constant strings prevents SSRF localhost port-scanning against unrelated services.
+ */
+const ALLOWED_BRIDGE_HTTP_ORIGINS: Readonly<Record<number, string>> = {
+  4401: 'http://127.0.0.1:4401',
+  4402: 'http://127.0.0.1:4402',
+  4403: 'http://127.0.0.1:4403',
+  4404: 'http://127.0.0.1:4404',
+  4405: 'http://127.0.0.1:4405',
+  4406: 'http://127.0.0.1:4406',
+  4407: 'http://127.0.0.1:4407',
+  4408: 'http://127.0.0.1:4408',
+  4409: 'http://127.0.0.1:4409',
+  4410: 'http://127.0.0.1:4410',
+};
+
+const ALLOWED_BRIDGE_WS_ORIGINS: Readonly<Record<number, string>> = {
+  4401: 'ws://127.0.0.1:4401',
+  4402: 'ws://127.0.0.1:4402',
+  4403: 'ws://127.0.0.1:4403',
+  4404: 'ws://127.0.0.1:4404',
+  4405: 'ws://127.0.0.1:4405',
+  4406: 'ws://127.0.0.1:4406',
+  4407: 'ws://127.0.0.1:4407',
+  4408: 'ws://127.0.0.1:4408',
+  4409: 'ws://127.0.0.1:4409',
+  4410: 'ws://127.0.0.1:4410',
+};
+
+export function resolveAllowedBridgeHttpOrigin(port: number): string | null {
+  return Object.prototype.hasOwnProperty.call(ALLOWED_BRIDGE_HTTP_ORIGINS, port)
+    ? ALLOWED_BRIDGE_HTTP_ORIGINS[port]
+    : null;
+}
+
+export function resolveAllowedBridgeWsOrigin(port: number): string | null {
+  return Object.prototype.hasOwnProperty.call(ALLOWED_BRIDGE_WS_ORIGINS, port)
+    ? ALLOWED_BRIDGE_WS_ORIGINS[port]
+    : null;
+}
+
+/**
  * Parses and strictly validates a TCP port for local SyncingBridge loopback calls.
  * - Returns DEFAULT_BRIDGE_PORT (4401) when raw is null, undefined, or empty string.
  * - Returns null when raw is malformed or outside 1024..65535.

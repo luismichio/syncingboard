@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { parseBridgePort } from '@/lib/sync/bridgeValidation';
+import { parseBridgePort, resolveAllowedBridgeWsOrigin } from '@/lib/sync/bridgeValidation';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,9 +21,10 @@ export async function GET(request: NextRequest) {
   }
 
   const port = parseBridgePort(rawPort);
-  if (port === null) {
+  const wsOrigin = port !== null ? resolveAllowedBridgeWsOrigin(port) : null;
+  if (!wsOrigin) {
     return NextResponse.json(
-      { error: 'Invalid bridge port. Expected integer between 1024 and 65535.' },
+      { error: 'Invalid bridge port. Expected integer between 4401 and 4410.' },
       { status: 400 }
     );
   }
@@ -78,7 +79,7 @@ export async function GET(request: NextRequest) {
       request.signal.addEventListener('abort', closeAll);
 
       try {
-        ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+        ws = new WebSocket(`${wsOrigin}/ws`);
       } catch {
         closeAll();
         return;

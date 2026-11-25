@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { clampBridgeTimeout, parseBridgePort } from '@/lib/sync/bridgeValidation';
+import {
+  clampBridgeTimeout,
+  parseBridgePort,
+  resolveAllowedBridgeWsOrigin,
+} from '@/lib/sync/bridgeValidation';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,21 +27,23 @@ export async function POST(request: NextRequest) {
     }
 
     const bridgePort = parseBridgePort(body.port ?? request.headers.get('x-bridge-port'));
-    if (bridgePort === null) {
+    const wsOrigin = bridgePort !== null ? resolveAllowedBridgeWsOrigin(bridgePort) : null;
+    if (!wsOrigin) {
       return NextResponse.json(
-        { error: 'Invalid bridge port. Expected integer between 1024 and 65535.' },
+        { error: 'Invalid bridge port. Expected integer between 4401 and 4410.' },
         { status: 400 }
       );
     }
 
-    const timeoutMs = clampBridgeTimeout(body.timeoutMs, 8000);
+    const clampedTimeout = clampBridgeTimeout(body.timeoutMs, 8000);
+    const safeTimeoutMs = Math.min(Math.max(Number(clampedTimeout) || 8000, 1000), 30000);
     const reqId = 'req_' + Math.random().toString(36).slice(2, 9);
 
     if (typeof WebSocket === 'undefined') {
       return NextResponse.json({ error: 'WebSocket not supported in runtime' }, { status: 500 });
     }
 
-    const ws = new WebSocket(`ws://127.0.0.1:${bridgePort}/ws`);
+    const ws = new WebSocket(`${wsOrigin}/ws`);
 
     const result = await new Promise<{ ok: boolean; data?: unknown; error?: string }>((resolve) => {
       let resolved = false;
@@ -57,7 +63,7 @@ export async function POST(request: NextRequest) {
           cleanup();
           resolve({ ok: false, error: 'Local Bridge request timed out. Make sure the Companion plugin is open in Figma/Penpot.' });
         }
-      }, timeoutMs);
+      }, safeTimeoutMs);
 
       ws.onopen = () => {
         // Register channel
