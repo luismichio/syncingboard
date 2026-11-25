@@ -134,12 +134,15 @@ export default function MiroPluginPage() {
 
     const check = async () => {
       if (localStorage.getItem('syncingboard_use_tauri') !== 'true') return;
-      const health = await probeTauriBridge(3000);
+      const activePairing = pairingId || getOrCreatePairingId();
+      const health = await probeTauriBridge(3000, activePairing || undefined);
       if (health && health.status === 'ok') {
         if (!useTauri) {
           setUseTauri(true);
-          releaseLocalRelaySession();
-          void notifyTauriMiroConnect();
+          if (health.transport !== 'ably-bridge') {
+            releaseLocalRelaySession();
+            void notifyTauriMiroConnect();
+          }
         }
         setFigmaConnected(health.figmaConnected === true);
       } else {
@@ -149,9 +152,9 @@ export default function MiroPluginPage() {
     };
 
     void check();
-    const interval = setInterval(check, 15_000);
+    const interval = setInterval(check, 30_000);
     return () => clearInterval(interval);
-  }, [useTauri]);
+  }, [useTauri, pairingId]);
 
   // Live auto-detect for Figma selection when connected via local Tauri SyncingBridge (0 Ably/Upstash cost)
   const applyLiveFigmaSelectionRef = useRef(applyLiveFigmaSelection);

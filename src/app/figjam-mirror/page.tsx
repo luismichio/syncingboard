@@ -87,12 +87,15 @@ export default function FigJamPluginPage() {
     if (!useTauri && !wantsTauri) return;
     const check = async () => {
       if (localStorage.getItem('syncingboard_use_tauri') !== 'true') return;
-      const health = await probeTauriBridge(3000);
+      const activePairing = pairingId || getOrCreatePairingId();
+      const health = await probeTauriBridge(3000, activePairing || undefined);
       if (health && health.status === 'ok') {
         if (!useTauri) {
           setUseTauri(true);
-          releaseLocalRelaySession();
-          void notifyTauriMiroConnect();
+          if (health.transport !== 'ably-bridge') {
+            releaseLocalRelaySession();
+            void notifyTauriMiroConnect();
+          }
         }
         setFigmaConnected(health.figmaConnected === true);
       } else {
@@ -101,9 +104,9 @@ export default function FigJamPluginPage() {
       }
     };
     void check();
-    const interval = setInterval(check, 15_000);
+    const interval = setInterval(check, 30_000);
     return () => clearInterval(interval);
-  }, [useTauri]);
+  }, [useTauri, pairingId]);
 
   const handleToggleTauri = async () => {
     if (useTauri) {
