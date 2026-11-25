@@ -14,7 +14,10 @@ async function handler(request: Request) {
   const owner = (searchParams.get('owner') || '').trim();
   const repo = (searchParams.get('repo') || '').trim();
 
-  if (!owner || !repo || !SAFE_SEGMENT.test(owner) || !SAFE_SEGMENT.test(repo)) {
+  const isInvalid = (seg: string) =>
+    !seg || !SAFE_SEGMENT.test(seg) || seg === '.' || seg === '..' || seg.includes('..');
+
+  if (isInvalid(owner) || isInvalid(repo)) {
     return NextResponse.json(
       { error: 'Invalid owner or repo parameter.' },
       { status: 400 }

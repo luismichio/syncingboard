@@ -24,9 +24,9 @@ We process minimal operational data to keep the service running, secure, and fun
 | **Google Analytics** | Anonymous usage metrics (page views, feature interactions) | Google's servers | Per Google's policy | Consent (opt-in via cookie banner) |
 
 **We do NOT store:**
-- Your Figma, Penpot, or Miro design files or frames
+- Your Figma, Penpot, Miro, or GitHub design files, frames, or private Markdown content
 - Your exported images or SVGs
-- Your OAuth access or refresh tokens (stored only in your browser's `localStorage`)
+- Your Figma, Miro, or GitHub OAuth access/refresh tokens or Personal Access Tokens (stored only in your browser's `localStorage`)
 - Your name, email, or account credentials
 - Any personal identification beyond IP address
 

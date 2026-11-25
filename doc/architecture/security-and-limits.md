@@ -24,6 +24,8 @@ SyncingBoard implements a sliding-window rate limiter (`@upstash/ratelimit` via 
 |---|---|---|
 | Figma renders / min | 5 | `RATE_LIMIT_COMMUNITY_FIGMA_PER_MIN` |
 | Figma renders / day | 50 | `RATE_LIMIT_COMMUNITY_FIGMA_PER_DAY` |
+| GitHub Markdown & branches / min | 30 | `RATE_LIMIT_COMMUNITY_GITHUB_PER_MIN` |
+| GitHub Markdown & branches / day | 500 | `RATE_LIMIT_COMMUNITY_GITHUB_PER_DAY` |
 | Relay selections / min | 5 | `RATE_LIMIT_COMMUNITY_RELAY_PER_MIN` |
 | Relay selections / hour | 30 | `RATE_LIMIT_COMMUNITY_RELAY_PER_HOUR` |
 | Relay results / day | 100 | `RATE_LIMIT_COMMUNITY_RELAY_PER_DAY` |
@@ -38,6 +40,7 @@ SyncingBoard implements a sliding-window rate limiter (`@upstash/ratelimit` via 
 * **Figma API Quotas:** Starter (Free) plan is limited to 6 image requests per month. Paid plans allow 10–20 requests/min. For detailed tier limits, see the official [Figma REST API Rate Limits Documentation](https://developers.figma.com/docs/rest-api/rate-limits/). SyncingBoard optimizes consumption by batching requested frames from the same file into single HTTP requests (`/api/figma/render-batch`).
 * **Penpot API Quotas:** Penpot does not enforce API rate limits or monthly export caps. Rendering runs locally in the Penpot browser tab.
 * **Miro API Quotas:** Miro limits image updates (`PATCH`) to 50 requests/min per user token. For detailed rate tier specifications, see the official [Miro REST API Rate Limiting Reference](https://developers.miro.com/reference/rate-limiting). SyncingBoard enforces a **500ms delay** between consecutive widget updates to ensure compliance.
+* **GitHub REST API Quotas:** Unauthenticated requests share a **60 requests/hour** per-IP limit; authenticated users (via GitHub OAuth or PAT) receive **5,000 requests/hour** per user account. SyncingBoard sends `If-None-Match` ETags on every sync — `304 Not Modified` responses consume **0** GitHub API quota. All `/api/github/*` routes enforce strict URL/segment validation (preventing SSRF/path traversal) and a **512 KB** Markdown payload cap.
 * **Batch Limit:** Community plan limits sync to **3 unique images per batch**. UI warning banner in `SyncTab.tsx` disables the sync button when exceeded.
 * **Scale Restriction:** Community plan scale dropdown is limited to 1x and 2x (`MAX_SCALE=2`). Self-host deployments support 1x–4x (`MAX_SCALE=4`).
 * **Hybrid Batch Caps (`src/lib/sync/batchLimits.ts`):**
@@ -67,7 +70,7 @@ SyncingBoard implements a sliding-window rate limiter (`@upstash/ratelimit` via 
 
 ### Stateless OAuth Store (`/api/oauth/store`)
 Opening Miro or Figma OAuth login pages inside iframe sandboxes triggers browser third-party cookie blocking.
-* **Handshake Mechanism:** Top-level popup OAuth callback handlers (`/api/oauth/figma/callback`, `/api/oauth/miro/callback`) write tokens to Upstash Redis using `SETEX` with a **300-second (5-minute) TTL**, mapped to `oauth:store:${hashId(state)}`.
+* **Handshake Mechanism:** Top-level popup OAuth callback handlers (`/api/oauth/figma/callback`, `/api/oauth/miro/callback`, `/api/oauth/github/callback`) write tokens to Upstash Redis using `SETEX` with a **300-second (5-minute) TTL**, mapped to `oauth:store:${hashId(state)}`.
 * **Consumer Polling:** The Miro plugin panel inside the desktop/iframe context polls `/api/oauth/store?state=...`, retrieves and deletes the token payload (`GET` + `DEL`), and completes login without persistent database storage.
 
 ### Local Bridge Security & CORS / PNA Controls (`SyncingBridge`)

@@ -124,8 +124,8 @@ For power users running **Figma Desktop** and **Miro Desktop**, the optional **S
 
 Keep product specs, architecture notes, and release documentation in sync between GitHub Markdown files and your **Miro**, **FigJam**, and **Penpot** boards:
 
-* **Deterministic Section Picker:** Paste any GitHub `.md` URL (public or private) in **Import → DOCS** (Miro & FigJam) or the Penpot Companion **DOCS** tab to parse headings (`#`–`######`) into selectable sections.
-* **In-Place Updates & Section Switching:** Select any bound GitHub widget on Miro or FigJam to refresh it from the unified **Sync** tab — preserving position, size, connectors, and comments — or retarget it to another heading using the inline **Section** dropdown. In Penpot, click **Sync All Bound Docs** to update all bound `Text` shapes on the active page in-place with native `TextShape.getRange` typography styling.
+* **Deterministic Section & Branch Picker:** Paste any GitHub `.md` URL (public or private) in **Import → DOCS** (Miro & FigJam) or the Penpot Companion **DOCS** tab to parse headings (`#`–`######`) into selectable sections and switch repository **branches** (including slash-containing branch names).
+* **In-Place Updates, Section/Branch Switching & Quick Links:** Select any bound GitHub widget on Miro or FigJam to refresh it from the unified **Sync** tab — preserving position, size, connectors, and comments — or retarget it to another **branch** or **heading** using the inline dropdowns. In Penpot, use the **Selected Bound Doc** card (with **OPEN** / **COPY** GitHub deep links, inline Branch & Section switchers, and **Sync Selected**) or click **Sync All Bound Docs** to update bound `Text` shapes in-place while preserving text box dimensions and `TextShape.getRange` typography.
 * **Private Repo OAuth:** Connect your GitHub account once in **Settings → GitHub Status** (stateless OAuth stored only in your browser) to read authorized private repositories without pasting Personal Access Tokens.
 
 ---

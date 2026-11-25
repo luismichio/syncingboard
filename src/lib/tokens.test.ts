@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { isTokenExpiring, TokenData } from './tokens';
+import { isTokenExpiring, saveToken, getToken, clearToken, TokenData } from './tokens';
 
 describe('tokens helper tests', () => {
   beforeEach(() => {
@@ -44,6 +44,54 @@ describe('tokens helper tests', () => {
         expiresAt: 1000000000000 + buffer + 1000, // expiring in 5m 1s
       };
       expect(isTokenExpiring(freshToken)).toBe(false);
+    });
+  });
+
+  describe('github token storage & /figjam-mirror Miro SDK guard', () => {
+    const origWindow = globalThis.window;
+    const origLocalStorage = globalThis.localStorage;
+
+    afterEach(() => {
+      Object.defineProperty(globalThis, 'window', { value: origWindow, configurable: true, writable: true });
+      Object.defineProperty(globalThis, 'localStorage', { value: origLocalStorage, configurable: true, writable: true });
+    });
+
+    it('saves, reads, and clears github tokens in localStorage without touching Miro storage on /figjam-mirror', async () => {
+      const store = new Map<string, string>();
+      const mockStorage = {
+        getItem: (k: string) => store.get(k) ?? null,
+        setItem: (k: string, v: string) => { store.set(k, v); },
+        removeItem: (k: string) => { store.delete(k); },
+      };
+      const miroGet = vi.fn();
+      const miroSet = vi.fn();
+
+      Object.defineProperty(globalThis, 'localStorage', { value: mockStorage, configurable: true, writable: true });
+      Object.defineProperty(globalThis, 'window', {
+        value: {
+          location: { origin: 'http://localhost:3000', pathname: '/figjam-mirror' },
+          miro: { board: { storage: { get: miroGet, set: miroSet } } },
+        },
+        configurable: true,
+        writable: true,
+      });
+
+      const ghToken: TokenData = {
+        accessToken: 'ghu_secret_token',
+        refreshToken: '',
+        expiresAt: 1000000000000 + 3600_000,
+      };
+
+      await saveToken('github', ghToken);
+      const loaded = await getToken('github');
+      expect(loaded?.accessToken).toBe('ghu_secret_token');
+      expect(miroSet).not.toHaveBeenCalled();
+      expect(miroGet).not.toHaveBeenCalled();
+
+      await clearToken('github');
+      const afterClear = await getToken('github');
+      expect(afterClear).toBeNull();
+      expect(miroSet).not.toHaveBeenCalled();
     });
   });
 });

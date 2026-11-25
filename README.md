@@ -51,7 +51,7 @@ SyncingBoard is deliberately built as a stateless proxy engine for key technical
 * **Live Selection Auto-Detect:** Detects active selections from companion plugins via Cloud Relay — or **instant live auto-detect** over local WebSocket/SSE with SyncingBridge (zero Ably/Upstash cost).
 * **FigJam App Target:** The full SyncingBoard panel also runs inside **FigJam** (Figma whiteboards) — in-place updates, Replace Selected, Penpot sync, and live selection relay — with no Miro board required (shipped 0.16.1, M1).
 * **Cloud Relay Transport:** Public HTTPS relay (Ably + Upstash Redis + Vercel) coordinates between companions and the Miro plugin — no localhost calls, no PNA blocks, works in any browser.
-* **Automated Test Coverage:** 208 Vitest unit and integration tests validating token security, rate-limiting logic, Markdown parsing/compiling, bridge validation, batch limits, URL parsers, and API route handlers (`yarn test`).
+* **Automated Test Coverage:** 220 Vitest unit and integration tests validating token security, rate-limiting logic, Markdown parsing/compiling, GitHub routes/OAuth, bridge validation, batch limits, URL parsers, and API route handlers (`yarn test`).
 * **SyncingBridge Desktop App (Optional Zero-Cloud Engine):** Native Rust/Tauri v2 desktop app (`ws://localhost:4401`) providing local Figma `exportAsync()` (0 Figma REST API calls), direct 50 MB Miro image `PATCH` uploads (0 Vercel calls), live Figma auto-detect, and configurable OS-wide global shortcuts (`Ctrl/Cmd+Shift+I/R/S`). Not required for cloud sync.
 
 ### Integration & Compatibility Matrix

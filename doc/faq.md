@@ -118,6 +118,8 @@ SyncingBoard implements sliding-window rate limits (configurable via environment
 |---|---|---|
 | Figma renders per minute | 5 | `RATE_LIMIT_COMMUNITY_FIGMA_PER_MIN` |
 | Figma renders per day | 50 | `RATE_LIMIT_COMMUNITY_FIGMA_PER_DAY` |
+| GitHub Markdown & branches per minute | 30 | `RATE_LIMIT_COMMUNITY_GITHUB_PER_MIN` |
+| GitHub Markdown & branches per day | 500 | `RATE_LIMIT_COMMUNITY_GITHUB_PER_DAY` |
 | Relay selections per minute | 5 | `RATE_LIMIT_COMMUNITY_RELAY_PER_MIN` |
 | Relay selections per hour | 30 | `RATE_LIMIT_COMMUNITY_RELAY_PER_HOUR` |
 | Relay results per day | 100 | `RATE_LIMIT_COMMUNITY_RELAY_PER_DAY` |
@@ -130,6 +132,10 @@ In addition to SyncingBoard's gateway rate limits, each platform enforces its ow
 * **Figma REST API:** Figma limits image rendering requests per user token. If exceeded, Figma returns an `HTTP 429` with a `Retry-After` header. SyncingBoard automatically detects 429 responses and displays a live **429 Cooldown** timer in the Miro sidebar UI.
 * **Miro REST API & Web SDK:** Miro limits image updates to 50 requests/min per user token. SyncingBoard enforces a batch size limit (max 3 images) and a 500ms delay between consecutive widget updates to prevent Miro rate blocks.
 * **Penpot Companion Relay:** Penpot sync runs via event-driven WebAssembly inside the Penpot tab and streams selection events over Ably WebSockets, bypassing REST polling limits entirely.
+* **GitHub REST API (Docs-as-Code):** Unauthenticated public-repo requests share a 60 req/hr per-IP limit, while users connected via **GitHub OAuth** (or PAT) get **5,000 req/hr** isolated to their own account. SyncingBoard sends `If-None-Match` ETags so unchanged files (`304 Not Modified`) use **0** GitHub quota.
+
+### How does GitHub Docs-as-Code sync work with private repositories?
+Public GitHub `.md` files work out of the box with no login. For **private repositories**, connect your GitHub account in **Settings → GitHub Status** (using the read-only SyncingBoard GitHub App — make sure the app is installed on the private repo) or paste an optional Personal Access Token override. Tokens are stored strictly in each user's browser (`localStorage`): if a collaborator without GitHub access to a private repo clicks **Sync**, GitHub returns `404` and the existing text on the board stays safely untouched.
 
 > For a full technical breakdown of infrastructure quotas, token-hash keys, and rate limit configurations, see our [Security, Rate Limits & Quotas Architecture](/docs/architecture-security-and-limits).
 

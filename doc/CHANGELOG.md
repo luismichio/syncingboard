@@ -19,6 +19,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - **Zero-Cloud Local Transport Adapter (`src/lib/sync/tauriBridgeClient.ts` & `companionRelayClient.ts`)** — added 3-tier local broker probing (`/api/bridge/health`, `ws://127.0.0.1:4401/ws`, `http://127.0.0.1:4401/health`), local WebSocket command/selection/export routing in both Miro/FigJam and Companion UIs (`src/companion-core/runtime.ts`), and automatic fallback to Ably Cloud Relay if the desktop bridge disconnects.
 - **Cloud Lease Release on Local Bridge Activation** — enabling `SyncingBridge (Local)` in Miro or FigJam immediately closes any open Ably connection and releases the community cloud slot lease via `releaseLocalRelaySession()`.
 
+### Security
+- **Dependency Security Upgrades (83 Dependabot Alerts Resolved)** — upgraded `next` & `eslint-config-next` (`16.4.5`), `undici` (`7.30.2`), `vite` (`8.3.8` root / `6.4.6` `tauri-bridge`), `vitest` & `@vitest/mocker` (`4.1.12`), `dompurify` (`3.5.0`), `sharp` (`0.35.5`), `js-yaml` (`4.3.2`), `nanoid` (`3.3.20`), `source-map-js` (`1.2.4`), `browserslist` (`4.29.6`), `postcss-selector-parser` (`6.1.6`), `brace-expansion` (`1.1.22`), `baseline-browser-mapping` (`2.11.39`), and Rust `rustls` (`0.23.46`).
+
 ## [0.17.2] - 2026-08-16
 
 ### Added

@@ -84,6 +84,20 @@ await penpot.openPage(originalPageId);
 
 ---
 
+## GitHub Docs-as-Code Source Adapter (Shipped)
+
+SyncingBoard pulls Markdown (`.md`) documentation directly from public and private GitHub repositories into **Miro**, **FigJam**, and **Penpot** text widgets in place:
+
+* **Ingestion & Branch Routes:**
+  * `GET /api/github/markdown?url=...&branch=...` — validates the GitHub URL (SSRF-guarded, 512 KB cap), forwards optional `Authorization: Bearer <token>` and `If-None-Match` ETag headers (`304 Not Modified` uses `0` GitHub API quota), parses sections deterministically via `src/lib/sync/markdownParser.ts`, and computes per-section SHA-256 content hashes.
+  * `GET /api/github/branches?owner=...&repo=...` — returns available repository branches for the **Branch** selector in Import and Sync UIs (including slash-containing branch names like `feat/docs-sync`).
+* **Multi-Target Dialect Compiler (`src/lib/sync/markdownCompiler.ts`):**
+  * `compileToMiroHtml()` — compiles Markdown to Miro Web SDK v2's strict XSS-safe HTML subset (`<p>`, `<strong>`, `<em>`, `<ul>`, `<ol>`, `<li>`, `<a>`, `<br>`).
+  * `compileToCharacterRanges()` — produces plain text + `StyledTextRange[]` (headings, bold, italic, inline code, links) for **FigJam** (`setRangeFontName`/`setRangeFontSize`/`setRangeHyperlink`) and **Penpot** (`TextShape.getRange` with 3-step heading gap-clamping).
+* **Authentication:** Stateless GitHub App (read-only `Contents: Read`) or OAuth App flow via `/api/oauth/github/{auth,callback}` stored strictly in browser `localStorage`, plus optional manual PAT override.
+
+---
+
 ## UXPin (Research Target)
 
 UXPin offers a REST API and a client-side JavaScript plugin system:
