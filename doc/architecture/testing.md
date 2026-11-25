@@ -25,7 +25,7 @@ graph TD
 
 ## Test Suites Breakdown
 
-SyncingBoard includes **198 passing automated tests** across 29 specialized Vitest files (plus Rust unit tests in `tauri-bridge/src-tauri/src/lib.rs`):
+SyncingBoard includes **224 passing automated tests** across 35 specialized Vitest files (plus Rust unit tests in `tauri-bridge/src-tauri/src/lib.rs`):
 
 | Test File | Category | Focus Area & Assertions |
 | :--- | :--- | :--- |

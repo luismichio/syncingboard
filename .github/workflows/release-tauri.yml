@@ -8,7 +8,7 @@ on:
       tag:
         description: "Release tag name (e.g. v0.18.0)"
         required: false
-        default: "v0.17.2"
+        default: "v0.18.0"
 
 permissions:
   contents: write

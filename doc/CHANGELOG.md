@@ -11,6 +11,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-11-25
+
 ### Added
 - **GitHub Docs-as-Code Text Sync & OAuth (Miro, FigJam & Penpot)** — added deterministic Markdown section parser (`src/lib/sync/markdownParser.ts`), XSS-safe Miro HTML & character-range dialect compiler (`src/lib/sync/markdownCompiler.ts`), SSRF-guarded GitHub Markdown & branch routes (`GET /api/github/markdown` with ETag `304` diffing + `&branch=` override, `GET /api/github/branches`), GitHub OAuth endpoints (`/api/oauth/github/auth`, `/api/oauth/github/callback`) with a **GitHub Status** Connect/Disconnect card in Settings, **Import → DOCS** + unified **Sync** tab updates with inline **Branch** & **Section** switchers in both **Miro** (`text`/`shape`/`sticky_note`) and **FigJam** (`figjam-place-doc`/`figjam-update-doc`), and a new **DOCS** tab in the **Penpot Companion Plugin** (`content:write` permission, `create-git-text`/`update-git-text`/`scan-git-shapes` with `TextShape.getRange` styling, inline Branch & Section switchers, and Settings OAuth).
 - **Configurable Global Shortcuts (`SyncingBridge`)** — added `tauri-plugin-global-shortcut` in `tauri-bridge` with configurable OS-wide hotkeys (`Ctrl/Cmd+Shift+I` Import, `Ctrl/Cmd+Shift+R` Replace, `Ctrl/Cmd+Shift+S` Sync) persisted to `hotkeys.json`, plus live Figma auto-detect in Miro via same-origin SSE (`/api/bridge/stream`).

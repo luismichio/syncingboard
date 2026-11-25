@@ -43,7 +43,7 @@ FigJam (Figma’s whiteboard) is SyncingBoard’s second whiteboard target. The 
 
 ## Penpot — Docs-as-Code Target (Dual-Role)
 
-> **Status:** shipped (dev).
+> **Status:** shipped in 0.18.0.
 
 While Penpot acts as a **Source** for design screens in the Companion **`SYNC`** tab, it also acts as a **Target** for GitHub Docs-as-Code Markdown inside the Penpot Companion **`DOCS`** tab:
 
