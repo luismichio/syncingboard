@@ -330,12 +330,15 @@ export default function MiroPluginPage() {
   // it is re-acquired so syncs keep working over the cloud.
   useEffect(() => {
     if (!useTauri || typeof window === 'undefined') return;
-    if (figmaConnected) {
+    // Only release the Ably session when running on local loopback transport ('local').
+    // In 'ably-bridge' mode (hosted syncingboard.com), Miro needs the Ably socket for live selection & hotkeys.
+    if (bridgeTransport === 'ably-bridge') return;
+    if (figmaConnected && bridgeTransport === 'local') {
       releaseLocalRelaySession();
-    } else {
+    } else if (!figmaConnected) {
       heartbeatRelaySession();
     }
-  }, [useTauri, figmaConnected]);
+  }, [useTauri, figmaConnected, bridgeTransport]);
 
   const fallbackCopyText = (text: string): void => {
     try {
