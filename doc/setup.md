@@ -431,21 +431,24 @@ yarn build    # Validate production build compilation
 > [!TIP]
 > **Optional Zero-Cloud Local Engine:** **SyncingBridge** is a lightweight Rust/Tauri v2 desktop app that runs a local loopback WebSocket & HTTP broker on `127.0.0.1:4401` (no SSL certificates or `mkcert` required). Day-to-day cloud sync works out of the box without installing SyncingBridge; running it unlocks **0 Ably / 0 Upstash / 0 Vercel / 0 Figma REST API** sync for Figma Desktop ↔ Miro Desktop, up to **50 Figma frames per batch**, **50 MB** image uploads, **live Figma auto-detect**, and **configurable OS-wide global shortcuts**.
 
-### Current Distribution & OS Security Notes
+### Download Pre-Built Installer & OS Security Notes
+
+Download the latest **SyncingBridge** installer from **[GitHub Releases (Latest)](https://github.com/luismichio/syncingboard/releases/latest)**:
+
+- **Windows:** `SyncingBridge_*_x64-setup.exe` or `SyncingBridge_*_x64_en-US.msi`
+- **macOS (Apple Silicon `arm64`):** `SyncingBridge_*_aarch64.dmg`
+- **Linux:** `SyncingBridge_*_amd64.AppImage`, `.deb`, or `.rpm`
 
 > [!NOTE]
-> **Pre-built binaries are not yet published on GitHub Releases.** Until the first public release is cut, run SyncingBridge from source (`yarn tauri:dev`) or compile a local installer (`cd tauri-bridge && yarn tauri build`) using the steps below.
-
-Once GitHub Release binaries are published, note that **installers are currently unsigned** (no Apple Developer ID notarization or Windows Authenticode certificate is configured yet):
-
-- **Linux (`.AppImage` / `.deb`):** Runs cleanly with no OS trust warnings.
-- **Windows (`.exe` / `.msi`):** Triggers a **Microsoft Defender SmartScreen** warning (*"Windows protected your PC"*). Click **More info → Run anyway** to install. Note that strict corporate IT policies may block unsigned installers.
-- **macOS (`.dmg` / `.app`):** Blocked by **Gatekeeper** on first launch (*"Apple could not verify…"* or *"is damaged"*). Open **System Settings → Privacy & Security → Open Anyway**, or clear the quarantine attribute in Terminal:
-  ```bash
-  xattr -cr /Applications/SyncingBridge.app
-  ```
-  Additionally, the GitHub Actions macOS runner (`macos-latest`) currently builds **Apple Silicon (`arm64`) only**; Intel Macs must build from source until a universal binary target is added.
-- **Updates:** Auto-update (`tauri-plugin-updater`) is not yet enabled — download the latest release or rebuild manually to upgrade.
+> **Unsigned Installers:** Pre-built installers do not yet include Apple Developer ID notarization or a Windows Authenticode certificate:
+> - **Linux (`.AppImage` / `.deb` / `.rpm`):** Runs cleanly with no OS trust warnings.
+> - **Windows (`.exe` / `.msi`):** Triggers a **Microsoft Defender SmartScreen** warning (*"Windows protected your PC"*). Click **More info → Run anyway** to install. Note that strict corporate IT policies may block unsigned installers.
+> - **macOS (`.dmg` / `.app`):** Blocked by **Gatekeeper** on first launch (*"Apple could not verify…"* or *"is damaged"*). Open **System Settings → Privacy & Security → Open Anyway**, or clear the quarantine attribute in Terminal:
+>   ```bash
+>   xattr -cr /Applications/SyncingBridge.app
+>   ```
+>   Current CI macOS builds target **Apple Silicon (`arm64`) only**; Intel Macs can build from source below.
+> - **Updates:** Auto-update (`tauri-plugin-updater`) is not yet enabled — download the latest release from GitHub Releases to upgrade.
 
 ### Prerequisites and Local Run
 

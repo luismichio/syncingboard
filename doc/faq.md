@@ -44,8 +44,8 @@ Penpot plugins run entirely inside the designer's browser tab. If that tab is cl
 **No.** Cloud sync and manual selection detection work 100% out of the box using the **Figma Companion Plugin** over the Ably Cloud Relay — no desktop app required. Installing **SyncingBridge** is optional and unlocks **zero-cloud local transport** for Figma Desktop ↔ Miro Desktop (instant live auto-detect, local `exportAsync()` with 0 Figma REST API calls, 50 MB Miro uploads, up to 50 Figma frames per batch, and OS-wide global shortcuts), while Penpot Web continues running seamlessly over Ably Cloud Relay alongside it.
 
 ### Where can I download SyncingBridge, and why does my OS warn about an unsigned app?
-Pre-built installers are **not yet published** on GitHub Releases — for now, build or run SyncingBridge from source (see [Setup Guide — SyncingBridge](./setup.md#tauri-desktop-app-syncingbridge-optional)). Once release binaries are published, they will initially be **unsigned**:
-- **Linux** (`.AppImage` / `.deb`) runs with no warnings.
+Download the latest installer for Windows, macOS, or Linux from **[GitHub Releases](https://github.com/luismichio/syncingboard/releases/latest)** (or build from source — see [Setup Guide — SyncingBridge](./setup.md#tauri-desktop-app-syncingbridge-optional)). Installers are currently **unsigned**:
+- **Linux** (`.AppImage` / `.deb` / `.rpm`) runs with no warnings.
 - **Windows** (`.exe` / `.msi`) shows a SmartScreen prompt — choose **More info → Run anyway** (corporate-managed machines may block unsigned installers).
 - **macOS** (`.dmg`) triggers Gatekeeper — allow it via **System Settings → Privacy & Security → Open Anyway** or run `xattr -cr /Applications/SyncingBridge.app`. Current CI macOS builds target **Apple Silicon (`arm64`)** only.
 
