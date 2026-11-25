@@ -431,6 +431,22 @@ yarn build    # Validate production build compilation
 > [!TIP]
 > **Optional Zero-Cloud Local Engine:** **SyncingBridge** is a lightweight Rust/Tauri v2 desktop app that runs a local loopback WebSocket & HTTP broker on `127.0.0.1:4401` (no SSL certificates or `mkcert` required). Day-to-day cloud sync works out of the box without installing SyncingBridge; running it unlocks **0 Ably / 0 Upstash / 0 Vercel / 0 Figma REST API** sync for Figma Desktop ↔ Miro Desktop, up to **50 Figma frames per batch**, **50 MB** image uploads, **live Figma auto-detect**, and **configurable OS-wide global shortcuts**.
 
+### Current Distribution & OS Security Notes
+
+> [!NOTE]
+> **Pre-built binaries are not yet published on GitHub Releases.** Until the first public release is cut, run SyncingBridge from source (`yarn tauri:dev`) or compile a local installer (`cd tauri-bridge && yarn tauri build`) using the steps below.
+
+Once GitHub Release binaries are published, note that **installers are currently unsigned** (no Apple Developer ID notarization or Windows Authenticode certificate is configured yet):
+
+- **Linux (`.AppImage` / `.deb`):** Runs cleanly with no OS trust warnings.
+- **Windows (`.exe` / `.msi`):** Triggers a **Microsoft Defender SmartScreen** warning (*"Windows protected your PC"*). Click **More info → Run anyway** to install. Note that strict corporate IT policies may block unsigned installers.
+- **macOS (`.dmg` / `.app`):** Blocked by **Gatekeeper** on first launch (*"Apple could not verify…"* or *"is damaged"*). Open **System Settings → Privacy & Security → Open Anyway**, or clear the quarantine attribute in Terminal:
+  ```bash
+  xattr -cr /Applications/SyncingBridge.app
+  ```
+  Additionally, the GitHub Actions macOS runner (`macos-latest`) currently builds **Apple Silicon (`arm64`) only**; Intel Macs must build from source until a universal binary target is added.
+- **Updates:** Auto-update (`tauri-plugin-updater`) is not yet enabled — download the latest release or rebuild manually to upgrade.
+
 ### Prerequisites and Local Run
 
 1. **Install Prerequisites:**
@@ -491,12 +507,13 @@ SyncingBoard includes a GitHub Actions pipeline that compiles installer packages
    git push origin v0.1.0
    ```
 4. GitHub Actions builds:
-   - **Windows:** `.msi` and `.exe` installers
-   - **macOS:** `.dmg` and `.app` bundles
+   - **Windows:** `.msi` and `.exe` installers (unsigned)
+   - **macOS:** `.dmg` and `.app` bundles (Apple Silicon `arm64`, unsigned/unnotarized)
    - **Linux:** `.deb` and `.AppImage` packages
 5. Assets are uploaded to a new **Draft Release** --- verify and publish.
 
-> For CI/CD releases, `cert.pem` and `key.pem` must be stored as **GitHub Actions Secrets** and written during the build step. See `.github/workflows/` for the existing pipeline.
+> [!NOTE]
+> Local TLS certificates (`cert.pem` / `key.pem`) are no longer required — SyncingBridge binds directly to loopback `127.0.0.1:4401`. Code signing and Apple notarization secrets are not yet configured in `.github/workflows/release-tauri.yml`.
 
 ---
 
