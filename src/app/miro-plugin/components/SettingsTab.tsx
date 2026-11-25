@@ -1,19 +1,25 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import ThemeToggle from '@/components/ThemeToggle';
+import { DEFAULT_BRIDGE_PORT, parseBridgePort } from '@/lib/sync/bridgeValidation';
 
 interface SettingsTabProps {
   tokensLoading: boolean;
   figmaToken: string | null;
   miroToken: string | null;
+  githubToken?: string | null;
   connectFigma: () => void;
   connectMiro: () => void;
+  connectGithub?: () => void;
   disconnectFigma: () => Promise<void>;
   disconnectMiro: () => Promise<void>;
+  disconnectGithub?: () => Promise<void>;
   copiedPairing: boolean;
   pairingId: string;
   copyPairingId: () => void;
   onRegeneratePairingId: () => void;
   useTauri: boolean;
+  onToggleTauri?: () => Promise<void> | void;
+  figmaConnected?: boolean;
   defaultPngScale: number;
   onDefaultPngScaleChange: (value: number) => void;
   availableScales: number[];
@@ -24,21 +30,40 @@ export function SettingsTab({
   tokensLoading,
   figmaToken,
   miroToken,
+  githubToken = null,
   connectFigma,
   connectMiro,
+  connectGithub,
   disconnectFigma,
   disconnectMiro,
+  disconnectGithub,
   copiedPairing,
   pairingId,
   copyPairingId,
   onRegeneratePairingId,
   useTauri,
+  onToggleTauri,
+  figmaConnected = false,
   defaultPngScale,
   onDefaultPngScaleChange,
   availableScales,
   hideMiro = false,
 }: SettingsTabProps) {
   const [showPairingId, setShowPairingId] = useState(false);
+  const [bridgePort, setBridgePort] = useState<string>(String(DEFAULT_BRIDGE_PORT));
+
+  useEffect(() => {
+    const rafId = window.requestAnimationFrame(() => {
+      try {
+        const saved = window.localStorage.getItem('syncingboard_bridge_port');
+        const valid = parseBridgePort(saved);
+        setBridgePort(String(valid ?? DEFAULT_BRIDGE_PORT));
+      } catch {
+        // Ignore storage errors
+      }
+    });
+    return () => window.cancelAnimationFrame(rafId);
+  }, []);
   return (
     <div className="flex-grow flex flex-col gap-6">
       <div>
@@ -103,16 +128,87 @@ export function SettingsTab({
             )}
           </div>
 
-          <div className="p-3 rounded-lg bg-bg-card/50 border border-border-card/50 flex justify-between items-center opacity-50 select-none">
-            <div>
-              <div className="text-xs font-semibold text-text-page">SyncBridge</div>
-              <div className="text-[10px] text-text-muted">
-                Local desktop bridge — coming soon
+          {connectGithub && disconnectGithub && (
+            <div className="p-3 rounded-lg bg-bg-card border border-border-card flex justify-between items-center">
+              <div>
+                <div className="text-xs font-semibold text-text-page">GitHub Status</div>
+                <div className="text-[10px] text-text-muted">OAuth connection for private Markdown docs</div>
+              </div>
+              {tokensLoading ? (
+                <span className="h-2 w-2 rounded-full bg-yellow-500 animate-pulse"></span>
+              ) : githubToken ? (
+                <div className="flex items-center gap-3">
+                  <span className="h-2 w-2 rounded-full bg-green-500"></span>
+                  <button
+                    onClick={disconnectGithub}
+                    className="text-[9px] font-mono font-bold tracking-wider text-text-muted hover:text-accent uppercase underline bg-transparent cursor-pointer"
+                  >
+                    Disconnect
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={connectGithub}
+                  className="text-[10px] font-mono tracking-wider font-semibold border border-accent text-accent rounded px-2.5 py-1 bg-transparent hover:bg-accent hover:text-bg-page transition cursor-pointer"
+                >
+                  CONNECT
+                </button>
+              )}
+            </div>
+          )}
+
+          <div className="p-3 rounded-lg bg-bg-card border border-border-card flex flex-col gap-2">
+            <div className="flex justify-between items-center">
+              <div>
+                <div className="text-xs font-semibold text-text-page">SyncingBridge (Local)</div>
+                <div className="text-[10px] text-text-muted">
+                  {useTauri
+                    ? 'Auto-connect to local desktop bridge on launch'
+                    : 'Auto-connect disabled — using Cloud Relay (Ably)'}
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {useTauri && <span className="h-2 w-2 rounded-full bg-green-500"></span>}
+                <label className="relative inline-block w-8 h-[18px] shrink-0 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={useTauri}
+                    onChange={onToggleTauri}
+                    className="opacity-0 w-0 h-0 peer"
+                  />
+                  <span className="absolute inset-0 bg-border-card rounded-full transition-colors duration-200 peer-checked:bg-accent before:content-[''] before:absolute before:h-3 before:w-3 before:left-[3px] before:bottom-[3px] before:bg-white before:rounded-full before:transition-transform before:duration-200 peer-checked:before:translate-x-3.5"></span>
+                </label>
               </div>
             </div>
-            <span className="text-[8px] font-mono uppercase tracking-wider text-text-muted/50">
-              Future
-            </span>
+            <div className="pt-2 border-t border-border-card/60 flex justify-between items-center text-[10px]">
+              <div>
+                <span className="text-text-muted font-mono block">Broker Port</span>
+                <span className="text-[9px] text-text-muted/60">Local WebSocket loopback port</span>
+              </div>
+              <input
+                type="number"
+                min={1024}
+                max={65535}
+                value={bridgePort}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setBridgePort(next);
+                  const valid = parseBridgePort(next);
+                  if (valid !== null && typeof window !== 'undefined') {
+                    window.localStorage.setItem('syncingboard_bridge_port', String(valid));
+                  }
+                }}
+                onBlur={() => {
+                  const valid = parseBridgePort(bridgePort);
+                  const normalized = String(valid ?? DEFAULT_BRIDGE_PORT);
+                  setBridgePort(normalized);
+                  if (typeof window !== 'undefined') {
+                    window.localStorage.setItem('syncingboard_bridge_port', normalized);
+                  }
+                }}
+                className="w-16 font-mono text-[10px] text-accent bg-bg-page border border-border-card rounded px-1.5 py-0.5 text-right focus:outline-none focus:border-accent"
+              />
+            </div>
           </div>
 
           <div className="p-3 rounded-lg bg-bg-card border border-border-card flex flex-col gap-2 animate-fade-in">
@@ -173,8 +269,8 @@ export function SettingsTab({
             </p>
             <p className="text-[9px] text-text-muted leading-tight mt-0.5">
               {useTauri
-                ? 'Transport mode: Local SyncBridge (Tauri).'
-                : 'Transport mode: Cloud relay (recommended for Penpot web sandbox).'}
+                ? `Transport mode: Local SyncingBridge (Tauri on ws://127.0.0.1:${parseBridgePort(bridgePort) ?? DEFAULT_BRIDGE_PORT}).`
+                : 'Transport mode: Cloud relay (Ably).'}
             </p>
           </div>
         </div>

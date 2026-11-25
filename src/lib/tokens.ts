@@ -31,7 +31,10 @@ const FP = deploymentFingerprint();
 const STORAGE_KEYS = {
   figma: `figma_tokens${FP}`,
   miro: `miro_tokens${FP}`,
+  github: `github_tokens${FP}`,
 };
+
+export type TokenPlatform = 'figma' | 'miro' | 'github';
 
 const MIRO_STORAGE_TIMEOUT_MS = 1500;
 const REFRESH_TIMEOUT_MS = 15000;
@@ -43,6 +46,8 @@ type MiroStorageApi = {
 
 function getMiroStorageApi(): MiroStorageApi | null {
   if (typeof window === 'undefined') return null;
+  // Never call Miro SDK storage when running inside the FigJam mirror route
+  if (window.location?.pathname?.startsWith('/figjam-mirror')) return null;
 
   const storageCandidate = window.miro?.board?.storage as unknown;
   if (!storageCandidate || typeof storageCandidate !== 'object') return null;
@@ -100,7 +105,7 @@ function parseTokenData(raw: string): TokenData | null {
  * Saves token data — always writes to localStorage (fast local cache) and
  * also attempts Miro board storage (survives browser cache clears).
  */
-export async function saveToken(platform: 'figma' | 'miro', data: TokenData): Promise<void> {
+export async function saveToken(platform: TokenPlatform, data: TokenData): Promise<void> {
   if (typeof window === 'undefined') return;
 
   // Always write to localStorage as a local cache — this is the fast path
@@ -131,7 +136,7 @@ export async function saveToken(platform: 'figma' | 'miro', data: TokenData): Pr
  * Reads token data — checks localStorage first (instant, works immediately on
  * iframe reload), falls back to Miro board storage (survives cache clears).
  */
-export async function getToken(platform: 'figma' | 'miro'): Promise<TokenData | null> {
+export async function getToken(platform: TokenPlatform): Promise<TokenData | null> {
   if (typeof window === 'undefined') return null;
 
   // 1. Read from localStorage first — this is the fast path on iframe reload.
@@ -175,7 +180,7 @@ export async function getToken(platform: 'figma' | 'miro'): Promise<TokenData | 
 /**
  * Clears token data from both localStorage and Miro board storage.
  */
-export async function clearToken(platform: 'figma' | 'miro'): Promise<void> {
+export async function clearToken(platform: TokenPlatform): Promise<void> {
   if (typeof window === 'undefined') return;
 
   // Always clear localStorage first.
@@ -210,22 +215,117 @@ export function isTokenExpiring(tokenData: TokenData | null): boolean {
 }
 
 /**
- * Retrieves a valid, unexpired token.
- * If the token is near expiration, it calls the backend refresh endpoint.
- *
- * Issue 4 fix: We NEVER clear the old token on a single refresh failure.
- * Transient failures (server cold start, network glitch) should not force
- * re-authentication. The old token stays in storage and the next page load
- * will retry the refresh. The only way tokens are cleared is via explicit
- * user action (Disconnect button).
+ * In-memory single-flight refresh promises keyed by platform.
+ * Prevents concurrent callers in the same tab from racing on single-use
+ * rotating refresh tokens (Miro & GitHub Apps).
  */
-export async function getValidToken(platform: 'figma' | 'miro'): Promise<string | null> {
+const inFlightRefreshes = new Map<TokenPlatform, Promise<string | null>>();
+
+function broadcastRefreshedToken(platform: TokenPlatform, accessToken: string): void {
+  if (typeof window === 'undefined' || typeof BroadcastChannel === 'undefined') return;
+  try {
+    const channel = new BroadcastChannel('figma_miro_sync');
+    const tokenKey =
+      platform === 'figma' ? 'figmaToken' : platform === 'miro' ? 'miroToken' : 'githubToken';
+    channel.postMessage({ type: 'TOKENS_UPDATED', tokenData: { [tokenKey]: accessToken } });
+    channel.close();
+  } catch {
+    // BroadcastChannel unavailable
+  }
+}
+
+async function withCrossTabLock<T>(lockName: string, fn: () => Promise<T>): Promise<T> {
+  const nav = typeof navigator !== 'undefined' ? (navigator as Navigator & { locks?: LockManager }) : undefined;
+  if (nav?.locks && typeof nav.locks.request === 'function') {
+    return nav.locks.request(lockName, fn);
+  }
+  return fn();
+}
+
+async function performRefreshLocked(platform: TokenPlatform): Promise<string | null> {
+  return withCrossTabLock(`syncingboard_oauth_refresh_${platform}`, async () => {
+    // Re-read storage inside the lock: another tab may have already rotated the token.
+    const latest = await getToken(platform);
+    if (!latest) return null;
+    if (!isTokenExpiring(latest)) {
+      return latest.accessToken;
+    }
+    if (!latest.refreshToken) {
+      return Date.now() < latest.expiresAt ? latest.accessToken : null;
+    }
+
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    try {
+      const controller = new AbortController();
+      timeoutId = setTimeout(() => controller.abort(), REFRESH_TIMEOUT_MS);
+
+      const response = await fetch('/api/oauth/refresh', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Refresh-Token': latest.refreshToken,
+        },
+        body: JSON.stringify({ platform }),
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        // Don't clear — keep old token for retry on next load
+        console.warn(`${platform} refresh failed (HTTP ${response.status}), keeping old token for retry`);
+        return null;
+      }
+
+      const rawData: unknown = await response.json();
+      if (!rawData || typeof rawData !== 'object') {
+        console.warn(`${platform} refresh returned invalid payload, keeping old token for retry`);
+        return null;
+      }
+
+      const data = rawData as Record<string, unknown>;
+      if (
+        typeof data.accessToken !== 'string' ||
+        typeof data.refreshToken !== 'string' ||
+        typeof data.expiresAt !== 'number'
+      ) {
+        console.warn(`${platform} refresh payload missing required fields, keeping old token for retry`);
+        return null;
+      }
+
+      const updatedTokenData: TokenData = {
+        accessToken: data.accessToken,
+        refreshToken: data.refreshToken,
+        expiresAt: data.expiresAt,
+        teamId: latest.teamId,
+      };
+
+      await saveToken(platform, updatedTokenData);
+      broadcastRefreshedToken(platform, updatedTokenData.accessToken);
+      return updatedTokenData.accessToken;
+    } catch (err) {
+      // Network error / timeout — old token stays, retry on next load
+      console.warn(`Failed to refresh ${platform} token (network error/timeout), keeping old token for retry:`, err);
+      return null;
+    } finally {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    }
+  });
+}
+
+/**
+ * Retrieves a valid, unexpired token.
+ * If the token is near expiration, it calls the backend refresh endpoint using
+ * in-memory single-flight + cross-tab Web Locks deduplication so rotating
+ * single-use refresh tokens (Miro, GitHub Apps) are never sent twice.
+ */
+export async function getValidToken(platform: TokenPlatform): Promise<string | null> {
   const tokenData = await getToken(platform);
   if (!tokenData) {
     return null;
   }
 
-  // If token is still fresh, return it
+  // If token is still fresh, return it immediately
   if (!isTokenExpiring(tokenData)) {
     return tokenData.accessToken;
   }
@@ -236,60 +336,15 @@ export async function getValidToken(platform: 'figma' | 'miro'): Promise<string 
     return Date.now() < tokenData.expiresAt ? tokenData.accessToken : null;
   }
 
-  // Token is expiring, trigger refresh call
-  let timeoutId: ReturnType<typeof setTimeout> | null = null;
-  try {
-    const controller = new AbortController();
-    timeoutId = setTimeout(() => controller.abort(), REFRESH_TIMEOUT_MS);
-
-    const response = await fetch('/api/oauth/refresh', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Refresh-Token': tokenData.refreshToken,
-      },
-      body: JSON.stringify({ platform }),
-      signal: controller.signal,
-    });
-
-    if (!response.ok) {
-      // Don't clear — keep old token for retry on next page load
-      console.warn(`${platform} refresh failed (HTTP ${response.status}), keeping old token for retry`);
-      return null;
-    }
-
-    const rawData: unknown = await response.json();
-    if (!rawData || typeof rawData !== 'object') {
-      console.warn(`${platform} refresh returned invalid payload, keeping old token for retry`);
-      return null;
-    }
-
-    const data = rawData as Record<string, unknown>;
-    if (
-      typeof data.accessToken !== 'string' ||
-      typeof data.refreshToken !== 'string' ||
-      typeof data.expiresAt !== 'number'
-    ) {
-      console.warn(`${platform} refresh payload missing required fields, keeping old token for retry`);
-      return null;
-    }
-
-    const updatedTokenData: TokenData = {
-      accessToken: data.accessToken,
-      refreshToken: data.refreshToken,
-      expiresAt: data.expiresAt,
-      teamId: tokenData.teamId,
-    };
-
-    await saveToken(platform, updatedTokenData);
-    return updatedTokenData.accessToken;
-  } catch (err) {
-    // Network error / timeout — old token stays, retry on next load
-    console.warn(`Failed to refresh ${platform} token (network error/timeout), keeping old token for retry:`, err);
-    return null;
-  } finally {
-    if (timeoutId) {
-      clearTimeout(timeoutId);
-    }
+  // Deduplicate concurrent refresh calls in the same tab
+  const existing = inFlightRefreshes.get(platform);
+  if (existing) {
+    return existing;
   }
+
+  const refreshPromise = performRefreshLocked(platform).finally(() => {
+    inFlightRefreshes.delete(platform);
+  });
+  inFlightRefreshes.set(platform, refreshPromise);
+  return refreshPromise;
 }

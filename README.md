@@ -6,7 +6,7 @@ updated: 2026-08-10
 
 # SyncingBoard (Figma & Penpot to Miro Sync Engine)
 
-[![Version 0.17.0](https://img.shields.io/badge/version-0.17.0-%23007ACC?style=flat-square)](https://github.com/luismichio/syncingboard/blob/dev/package.json)
+[![Version 0.18.0](https://img.shields.io/badge/version-0.18.0-%23007ACC?style=flat-square)](https://github.com/luismichio/syncingboard/blob/main/package.json)
 [![OSI Approved License](https://img.shields.io/badge/license-AGPLv3-%23A81C7D?style=flat-square&label=OSI%20Approved)](https://github.com/luismichio/syncingboard/blob/dev/LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-%23007ACC.svg?style=flat-square&logo=typescript&logoColor=white)](https://github.com/luismichio/syncingboard/blob/dev/tsconfig.json)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-%23FF6B6B?style=flat-square)](https://github.com/luismichio/syncingboard/issues/new)
@@ -45,27 +45,30 @@ SyncingBoard is deliberately built as a stateless proxy engine for key technical
 * **Consolidated Selection & Copies Counter:** Groups duplicates of the same frame under a single card with a count badge (e.g. `x3`). Format/scale changes apply to all copies at once.
 * **Replace Selected (Adopt Image):** Replace any image widget — even non-SyncingBoard ones — with a SyncingBoard-managed copy, preserving connectors, comments, and frame membership.
 * **Preserve Widget Size:** Refresh image content without resizing, keeping manual crop/scale/layout adjustments.
-* **Batch Limit of 3:** Sync up to 3 unique frames per operation to stay within API rate limits (Community version). Warning banner appears when exceeded.
-* **Dual-Platform Sync:** Supports **Figma** (cloud-native sync) and **Penpot** (relay-first sync) side-by-side.
-* **Figma & Penpot Selection Auto-Detect:** Detects active selections directly from companion plugins via the cloud relay — no desktop apps required.
+* **Hybrid Batch Limits:** Up to **3 unique frames** per sync on Cloud Community; lifted to **50 Figma frames** per sync when connected locally via **SyncingBridge** (while Penpot remains at 3 to protect Cloud Relay quotas).
+* **Dual-Platform Sync:** Supports **Figma** (local zero-cloud via SyncingBridge or cloud-native) and **Penpot** (relay-first sync) side-by-side.
+* **GitHub Docs-as-Code Text Sync (Miro, FigJam & Penpot):** Import and update Markdown sections from public or private GitHub repos (via GitHub OAuth in Settings) directly into Miro, FigJam, and Penpot text/sticky/shape widgets in place, with inline section switching in the Sync tab.
+* **Live Selection Auto-Detect:** Detects active selections from companion plugins via Cloud Relay — or **instant live auto-detect** over local WebSocket/SSE with SyncingBridge (zero Ably/Upstash cost).
 * **FigJam App Target:** The full SyncingBoard panel also runs inside **FigJam** (Figma whiteboards) — in-place updates, Replace Selected, Penpot sync, and live selection relay — with no Miro board required (shipped 0.16.1, M1).
-* **Cloud Relay Transport:** Public HTTPS relay (Upstash Redis + Vercel) coordinates between companions and the Miro plugin — no localhost calls, no PNA blocks, works in any browser.
-* **Automated Test Coverage:** 132 Vitest unit and integration tests validating token security, rate-limiting logic, URL parsers, and API route handlers (`yarn test`).
-* **SyncBridge Companion (Planned Desktop Extender):** Tauri-powered desktop app for future advanced capabilities — large images (>4.5MB), Adobe UXP bridge, local LLMs, two-way sync. Not required for day-to-day sync.
+* **Cloud Relay Transport:** Public HTTPS relay (Ably + Upstash Redis + Vercel) coordinates between companions and the Miro plugin — no localhost calls, no PNA blocks, works in any browser.
+* **Automated Test Coverage:** 220 Vitest unit and integration tests validating token security, rate-limiting logic, Markdown parsing/compiling, GitHub routes/OAuth, bridge validation, batch limits, URL parsers, and API route handlers (`yarn test`).
+* **SyncingBridge Desktop App (Optional Zero-Cloud Engine):** Native Rust/Tauri v2 desktop app (`ws://localhost:4401`) providing local Figma `exportAsync()` (0 Figma REST API calls), direct 50 MB Miro image `PATCH` uploads (0 Vercel calls), live Figma auto-detect, and configurable OS-wide global shortcuts (`Ctrl/Cmd+Shift+I/R/S`). Not required for cloud sync.
 
 ### Integration & Compatibility Matrix
 
 | Feature | Design Tool Context | Miro Client | Status |
 | :--- | :--- | :--- | :--- |
 | **Figma URL Import / Sync** | Browser or Desktop | Browser or Desktop | **Shipped** |
-| **Figma Auto-Detect Selection** | Figma Desktop or Browser | Browser or Desktop | **Shipped** (via Figma Companion Plugin) |
+| **Figma Auto-Detect Selection** | Figma Desktop or Browser | Browser or Desktop | **Shipped** (Cloud Relay or Live Local via SyncingBridge) |
 | **Penpot Detect & Import** | Penpot Browser | Browser or Desktop | **Shipped** (Companion-plugin detection; no Penpot URL import — the Penpot sandbox exposes no editor URL) |
-| **Penpot Export & Render** | Penpot Browser | Browser or Desktop | **Shipped** (Companion plugin renders locally, relay handles transport) |
+| **Penpot Export & Render** | Penpot Browser | Browser or Desktop | **Shipped** (Companion plugin renders locally, Cloud Relay handles transport) |
 | **Replace Selected (Adopt Image)** | Browser or Desktop | Browser or Desktop | **Shipped** |
 | **FigJam App (Target)** | FigJam (Figma Plugin) | Runs inside FigJam | **Shipped** (hosted panel: sync / import / replace; PNG-only) |
-| **Figma / Miro Login (OAuth)** | Any browser | Browser or Desktop | **Shipped** (Stateless OAuth polling) |
-| **Large Images (>4.5MB)** | Browser or Desktop | Browser or Desktop | **Planned** (SyncBridge capability extender) |
-| **Adobe UXP / Local LLMs / Two-Way Sync** | Desktop apps | Browser or Desktop | **Planned** (SyncBridge capability extender) |
+| **Figma / Miro / GitHub Login (OAuth)** | Any browser | Browser or Desktop | **Shipped** (Stateless OAuth polling) |
+| **GitHub Docs-as-Code Text Sync** | Public & Private GitHub `.md` | Miro, FigJam & Penpot | **Shipped** (In-place text/sticky/shape sync + Section switcher + Penpot `getRange` styling) |
+| **Zero-Cloud Local Sync & Large Images (>4.5MB)** | Figma Desktop | Miro Desktop | **Shipped** (via SyncingBridge — 50 MB limit, 0 Figma REST / Vercel / Ably calls) |
+| **Configurable Global Shortcuts** | Figma Desktop | Miro Desktop | **Shipped** (via SyncingBridge — `Ctrl/Cmd+Shift+I/R/S`) |
+| **Adobe UXP / Local LLMs / Two-Way Sync** | Desktop apps | Browser or Desktop | **Planned** (SyncingBridge capability extender) |
 
 ---
 
@@ -119,7 +122,7 @@ SyncingBoard runs on a deliberately minimal, serverless-friendly stack. Here is 
 
 > **Full setup & deployment guide -> [doc/setup.md](./doc/setup.md)**
 >
-> **Tauri/SyncBridge setup -> [doc/setup.md#tauri-desktop-app-syncbridge-optional](./doc/setup.md#tauri-desktop-app-syncbridge-optional)**
+> **Tauri/SyncingBridge setup -> [doc/setup.md#tauri-desktop-app-syncingbridge-optional](./doc/setup.md#tauri-desktop-app-syncingbridge-optional)**
 >
 > **Architecture reference -> [doc/architecture.md](./doc/architecture.md)**
 

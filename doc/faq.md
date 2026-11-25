@@ -40,8 +40,14 @@ To bypass this browser block, SyncingBoard uses a secure cloud relay pathway (Ab
 ### Why do I get a "Penpot companion is offline" error?
 Penpot plugins run entirely inside the designer's browser tab. If that tab is closed, or if the companion plugin is not actively open and connected, the Ably connection closes. To solve this, open the Penpot editor tab containing your designs, launch the **SyncingBoard Companion** plugin, verify it shows a "Connected" status, and ensure the pairing ID matches the one shown in your Miro sidebar.
 
-### Do I need the Tauri desktop app (SyncBridge) to auto-detect my Figma selection?
-**No.** While the Tauri desktop app can act as a local capability extender (e.g. for native figma client selection querying), you can now use the **Figma Companion Plugin** directly inside the Figma editor. The companion plugin uses Ably WebSockets to broadcast selection events directly from Figma to the Miro sidebar over the cloud relay, meaning it works entirely within the web browser without any local servers or desktop apps.
+### Do I need the Tauri desktop app (SyncingBridge) to auto-detect my Figma selection?
+**No.** Cloud sync and manual selection detection work 100% out of the box using the **Figma Companion Plugin** over the Ably Cloud Relay — no desktop app required. Installing **SyncingBridge** is optional and unlocks **zero-cloud local transport** for Figma Desktop ↔ Miro Desktop (instant live auto-detect, local `exportAsync()` with 0 Figma REST API calls, 50 MB Miro uploads, up to 50 Figma frames per batch, and OS-wide global shortcuts), while Penpot Web continues running seamlessly over Ably Cloud Relay alongside it.
+
+### Where can I download SyncingBridge, and why does my OS warn about an unsigned app?
+Pre-built installers are **not yet published** on GitHub Releases — for now, build or run SyncingBridge from source (see [Setup Guide — SyncingBridge](./setup.md#tauri-desktop-app-syncingbridge-optional)). Once release binaries are published, they will initially be **unsigned**:
+- **Linux** (`.AppImage` / `.deb`) runs with no warnings.
+- **Windows** (`.exe` / `.msi`) shows a SmartScreen prompt — choose **More info → Run anyway** (corporate-managed machines may block unsigned installers).
+- **macOS** (`.dmg`) triggers Gatekeeper — allow it via **System Settings → Privacy & Security → Open Anyway** or run `xattr -cr /Applications/SyncingBridge.app`. Current CI macOS builds target **Apple Silicon (`arm64`)** only.
 
 ### Is the Figma Companion plugin required to import or sync screens?
 **No.** The Figma Companion plugin is **only needed for auto-detecting your active selection** in Figma. You can import and sync screens directly into Miro by pasting Figma frame URLs into the Miro sidebar without installing the Figma Companion plugin.
@@ -118,6 +124,8 @@ SyncingBoard implements sliding-window rate limits (configurable via environment
 |---|---|---|
 | Figma renders per minute | 5 | `RATE_LIMIT_COMMUNITY_FIGMA_PER_MIN` |
 | Figma renders per day | 50 | `RATE_LIMIT_COMMUNITY_FIGMA_PER_DAY` |
+| GitHub Markdown & branches per minute | 30 | `RATE_LIMIT_COMMUNITY_GITHUB_PER_MIN` |
+| GitHub Markdown & branches per day | 500 | `RATE_LIMIT_COMMUNITY_GITHUB_PER_DAY` |
 | Relay selections per minute | 5 | `RATE_LIMIT_COMMUNITY_RELAY_PER_MIN` |
 | Relay selections per hour | 30 | `RATE_LIMIT_COMMUNITY_RELAY_PER_HOUR` |
 | Relay results per day | 100 | `RATE_LIMIT_COMMUNITY_RELAY_PER_DAY` |
@@ -130,6 +138,10 @@ In addition to SyncingBoard's gateway rate limits, each platform enforces its ow
 * **Figma REST API:** Figma limits image rendering requests per user token. If exceeded, Figma returns an `HTTP 429` with a `Retry-After` header. SyncingBoard automatically detects 429 responses and displays a live **429 Cooldown** timer in the Miro sidebar UI.
 * **Miro REST API & Web SDK:** Miro limits image updates to 50 requests/min per user token. SyncingBoard enforces a batch size limit (max 3 images) and a 500ms delay between consecutive widget updates to prevent Miro rate blocks.
 * **Penpot Companion Relay:** Penpot sync runs via event-driven WebAssembly inside the Penpot tab and streams selection events over Ably WebSockets, bypassing REST polling limits entirely.
+* **GitHub REST API (Docs-as-Code):** Unauthenticated public-repo requests share a 60 req/hr per-IP limit, while users connected via **GitHub OAuth** (or PAT) get **5,000 req/hr** isolated to their own account. SyncingBoard sends `If-None-Match` ETags so unchanged files (`304 Not Modified`) use **0** GitHub quota.
+
+### How does GitHub Docs-as-Code sync work with private repositories?
+Public GitHub `.md` files work out of the box with no login. For **private repositories**, connect your GitHub account in **Settings → GitHub Status** (using the read-only SyncingBoard GitHub App — make sure the app is installed on the private repo) or paste an optional Personal Access Token override. Tokens are stored strictly in each user's browser (`localStorage`): if a collaborator without GitHub access to a private repo clicks **Sync**, GitHub returns `404` and the existing text on the board stays safely untouched.
 
 > For a full technical breakdown of infrastructure quotas, token-hash keys, and rate limit configurations, see our [Security, Rate Limits & Quotas Architecture](/docs/architecture-security-and-limits).
 

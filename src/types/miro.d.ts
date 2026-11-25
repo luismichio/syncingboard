@@ -29,6 +29,8 @@ interface MiroBoard {
   get(): Promise<MiroItem[]>;
   getById(id: string): Promise<MiroItem>;
   getSelection(): Promise<MiroItem[]>;
+  deselect(items?: { id: string } | { id: string }[]): Promise<void>;
+  select?(options?: { id: string } | { id: string }[]): Promise<void>;
   viewport: {
     get(): Promise<MiroViewport>;
   };

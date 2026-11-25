@@ -1,7 +1,10 @@
-import { useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
+import { getValidToken } from '@/lib/tokens';
 import { parseFigmaUrl } from '@/lib/sync/figmaUrlParser';
 import { decodeHtmlEntities } from '@/lib/decodeHtmlEntities';
 import { MiroAdapter } from './MiroAdapter';
+import { broadcastSyncActivity, exportFigmaNodeLocally } from '@/lib/sync/companionRelayClient';
+import { updateMiroImageViaTauri } from '@/lib/sync/tauriBridgeClient';
 
 export interface FigmaNodeInfo {
   fileKey: string;
@@ -23,9 +26,11 @@ export function useFigmaImporter(
   const [figmaInput, setFigmaInput] = useState<string>('');
   const [figmaNodeInfo, setFigmaNodeInfo] = useState<FigmaNodeInfo | null>(null);
   const [isDetectingLocal, setIsDetectingLocal] = useState<boolean>(false);
+  const lastManualUrlAtRef = useRef<number>(0);
 
   const parseFigmaLink = async (url: string) => {
     setFigmaInput(url);
+    lastManualUrlAtRef.current = Date.now();
     const parsed = parseFigmaUrl(url);
     if (parsed) {
       // Set temporary loading state
@@ -34,11 +39,12 @@ export function useFigmaImporter(
         nodeId: parsed.nodeId,
         name: 'Loading...',
       });
-      if (figmaToken) {
+      const freshFigmaToken = (await getValidToken('figma')) || figmaToken;
+      if (freshFigmaToken) {
         try {
           const res = await fetch(`/api/figma/node-info?fileKey=${parsed.fileKey}&nodeId=${parsed.nodeId}`, {
             headers: {
-              Authorization: `Bearer ${figmaToken}`,
+              Authorization: `Bearer ${freshFigmaToken}`,
             },
           });
           if (res.ok) {
@@ -67,64 +73,42 @@ export function useFigmaImporter(
   };
 
   const detectLocalFigmaSelection = async () => {
-    setIsDetectingLocal(true);
+    setIsDetectingLocal(true);
     setSyncStatusParent('Waiting for the Figma Companion — select a frame in Figma…', 'progress');
-    
-    const useTauri = typeof window !== 'undefined' && localStorage.getItem('syncingboard_use_tauri') === 'true';
-    if (useTauri) {
-      try {
-        const { callFigmaSelectionTauri } = await import('@/lib/sync/companionRelayClient');
-        const selection = await callFigmaSelectionTauri();
-        if (selection) {
-          setFigmaNodeInfo({
-            fileKey: selection.fileKey,
-            nodeId: selection.id,
-            name: selection.name ? decodeHtmlEntities(selection.name) : 'Figma Screen',
-          });
-          setSyncStatusParent('Local Figma selection detected via SyncBridge!');
-        } else {
-          throw new Error('SyncBridge returned empty Figma selection details. Make sure your design file is open.');
-        }
-      } catch (err: unknown) {
-        const errMsg = err instanceof Error ? err.message : String(err);
-        setSyncStatusParent(`SyncBridge Figma detection failed: ${errMsg}`);
-      } finally {
-        setIsDetectingLocal(false);
-      }
-      return;
-    }
 
     try {
       const { callRelay, getOrCreatePairingId } = await import('@/lib/sync/companionRelayClient');
       const pairingId = getOrCreatePairingId();
 
-        if (!pairingId) {
-          throw new Error('Pairing ID is not set. Enter a pairing ID in settings first.');
-        }
+      if (!pairingId) {
+        throw new Error('Pairing ID is not set. Enter a pairing ID in settings first.');
+      }
 
-        const data = await callRelay({
-          pairingId,
-          platform: 'figma',
-          action: 'select',
-          timeoutMs: 8_000,
+      const data = await callRelay({
+        pairingId,
+        platform: 'figma',
+        action: 'select',
+        timeoutMs: 8_000,
+      });
+
+      const payload = data as { id?: string; name?: string; fileKey?: string } | null;
+      if (payload && payload.id && payload.fileKey) {
+        const safeDetectedName = payload.name ? decodeHtmlEntities(payload.name) : 'Figma Screen';
+        setFigmaNodeInfo({
+          fileKey: payload.fileKey,
+          nodeId: payload.id,
+          name: safeDetectedName,
         });
-
-        const payload = data as { id?: string; name?: string; fileKey?: string } | null;
-        if (payload && payload.id && payload.fileKey) {
-          setFigmaNodeInfo({
-            fileKey: payload.fileKey,
-            nodeId: payload.id,
-            name: payload.name ? decodeHtmlEntities(payload.name) : 'Figma Screen',
-          });
-          setSyncStatusParent(`Detected Figma companion frame: "${payload.name ? decodeHtmlEntities(payload.name) : 'Unnamed'}"`);
-        } else {
-          throw new Error('Figma companion returned empty selection. Make sure Figma is open and a frame is selected.');
-        }
-      } catch (relayErr: unknown) {
-        const relayMsg = relayErr instanceof Error ? relayErr.message : String(relayErr);
-        setSyncStatusParent(`Detection failed: ${relayMsg} (Tip: Open Figma Companion Plugin and connect using the same Pairing ID.)`);
-        console.warn('Figma Relay selection fail:', relayErr);
-      } finally {
+        setSyncStatusParent(`Detected Figma companion frame: "${safeDetectedName}"`);
+        void broadcastSyncActivity(pairingId, `Detected Figma frame: "${safeDetectedName}"`);
+      } else {
+        throw new Error('Figma companion returned empty selection. Make sure Figma is open and a frame is selected.');
+      }
+    } catch (relayErr: unknown) {
+      const relayMsg = relayErr instanceof Error ? relayErr.message : String(relayErr);
+      setSyncStatusParent(`Detection failed: ${relayMsg} (Tip: Open Figma Companion Plugin and connect using the same Pairing ID.)`);
+      console.warn('Figma Relay selection fail:', relayErr);
+    } finally {
       setIsDetectingLocal(false);
     }
   };
@@ -141,37 +125,58 @@ export function useFigmaImporter(
       const x = viewport.x + viewport.width / 2;
       const y = viewport.y + viewport.height / 2;
 
-      // Read default scale settings from user's global settings configuration
+      const fallbackName = figmaNodeInfo.name || figmaNodeInfo.nodeId;
+      const safeName = decodeHtmlEntities(fallbackName);
+      const pairingId = typeof window !== 'undefined' ? localStorage.getItem('syncingboard_pairing_id') || '' : '';
       const resolvedScale = scale ?? (typeof window !== 'undefined' ? Number(localStorage.getItem('default_png_scale') || '1') : 1);
+      void broadcastSyncActivity(pairingId, `Importing "${safeName}" into Miro board...`);
 
       setSyncStatusParent('Rendering Figma frame...', 'progress');
 
-      // Use the same render-batch endpoint as sync to guarantee identical image data handling
-      const batchRes = await fetch('/api/figma/render-batch', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${figmaToken}`,
-        },
-        body: JSON.stringify({
+      const isTauriMode =
+        typeof window !== 'undefined' && localStorage.getItem('syncingboard_use_tauri') === 'true';
+
+      // Fast path: export locally via Figma Companion's node.exportAsync() over Tauri WS (0 Figma REST API calls)
+      let dataUrl: string | null = null;
+      if (isTauriMode && pairingId) {
+        const localExport = await exportFigmaNodeLocally(pairingId, {
           fileKey: figmaNodeInfo.fileKey,
-          nodeIds: [figmaNodeInfo.nodeId],
+          nodeId: figmaNodeInfo.nodeId,
           format,
           scale: resolvedScale,
-        }),
-      });
-      if (!batchRes.ok) {
-        const errData = await batchRes.json().catch(() => ({}));
-        throw new Error(errData.error || `Server returned HTTP ${batchRes.status}`);
+        });
+        if (localExport?.dataUrl) {
+          dataUrl = localExport.dataUrl;
+        }
       }
-      const { images } = await batchRes.json() as { images: Record<string, string | null> };
-      const dataUrl = images[figmaNodeInfo.nodeId];
+
+      if (!dataUrl) {
+        // Fallback: render-batch cloud endpoint (for closed files or non-Tauri sessions)
+        const freshFigmaToken = (await getValidToken('figma')) || figmaToken;
+        const batchRes = await fetch('/api/figma/render-batch', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${freshFigmaToken}`,
+          },
+          body: JSON.stringify({
+            fileKey: figmaNodeInfo.fileKey,
+            nodeIds: [figmaNodeInfo.nodeId],
+            format,
+            scale: resolvedScale,
+          }),
+        });
+        if (!batchRes.ok) {
+          const errData = await batchRes.json().catch(() => ({}));
+          throw new Error(errData.error || `Server returned HTTP ${batchRes.status}`);
+        }
+        const { images } = await batchRes.json() as { images: Record<string, string | null> };
+        dataUrl = images[figmaNodeInfo.nodeId];
+      }
       if (!dataUrl) {
         throw new Error('Figma batch render returned no image for the specified node.');
       }
 
-      const fallbackName = figmaNodeInfo.name || figmaNodeInfo.nodeId;
-      const safeName = decodeHtmlEntities(fallbackName);
       const titleTag = `${safeName} [FigmaSync|${figmaNodeInfo.fileKey}|${figmaNodeInfo.nodeId}]`;
 
       const node = await new MiroAdapter(miro.board).createOrUpdate({
@@ -200,28 +205,35 @@ export function useFigmaImporter(
         // Non-blocking background registration of binary File resource on Miro backend
         // so that right-clicking and downloading the image from Miro uses the frame's actual name.
         // After the PATCH, re-assert the widget title via SDK — same pattern as sync/replace.
-        if (miroToken) {
+        const freshMiroToken = (await getValidToken('miro')) || miroToken;
+        if (freshMiroToken) {
           const registerImage = async () => {
             try {
               const boardInfo = await miro.board.getInfo();
-              const patchRes = await fetch('/api/miro/update-image', {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Authorization': `Bearer ${miroToken}`,
-                },
-                body: JSON.stringify({
-                  boardId: boardInfo.id,
-                  itemId: imageId,
-                  dataUrl,
-                  nodeName: safeName,
-                  fileKey: figmaNodeInfo.fileKey,
-                  nodeId: figmaNodeInfo.nodeId,
-                  format,
-                  scale: resolvedScale,
-                  platform: 'figma',
-                }),
-              });
+              const updatePayload = {
+                boardId: boardInfo.id,
+                itemId: imageId,
+                dataUrl,
+                nodeName: safeName,
+                fileKey: figmaNodeInfo.fileKey,
+                nodeId: figmaNodeInfo.nodeId,
+                format,
+                scale: resolvedScale,
+              };
+              let patchRes: Response | null = null;
+              if (isTauriMode) {
+                patchRes = await updateMiroImageViaTauri(updatePayload, freshMiroToken);
+              }
+              if (!patchRes) {
+                patchRes = await fetch('/api/miro/update-image', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${freshMiroToken}`,
+                  },
+                  body: JSON.stringify({ ...updatePayload, platform: 'figma' }),
+                });
+              }
               if (patchRes.ok) {
                 // Re-assert the widget title after PATCH to fix any server-side encoding
                 const widget = await miro.board.getById(imageId).catch(() => null);
@@ -238,6 +250,7 @@ export function useFigmaImporter(
         }
 
         setSyncStatusParent('✓ Image placed successfully!', 'success');
+        void broadcastSyncActivity(pairingId, `Imported "${safeName}" into Miro board successfully.`);
         setIsSyncingParent(false);
       } catch (metaErr: unknown) {
         const metaMsg = metaErr instanceof Error ? metaErr.message : String(metaErr);
@@ -252,12 +265,32 @@ export function useFigmaImporter(
     }
   };
 
+  const applyLiveFigmaSelection = useCallback(
+    (payload: Record<string, unknown>) => {
+      const id = typeof payload.id === 'string' ? payload.id.trim() : '';
+      if (!id) return;
+      // Don't overwrite a manual URL paste for 10 seconds
+      if (Date.now() - lastManualUrlAtRef.current < 10_000) return;
+      const fileKey =
+        typeof payload.fileKey === 'string' && payload.fileKey.trim()
+          ? payload.fileKey.trim()
+          : 'unknown';
+      const rawName = typeof payload.name === 'string' ? payload.name : 'Figma Frame';
+      const name = decodeHtmlEntities(rawName);
+      setFigmaNodeInfo({ fileKey, nodeId: id, name });
+      setFigmaInput(`https://www.figma.com/file/${fileKey}/?node-id=${encodeURIComponent(id)}`);
+      setSyncStatusParent(`Auto-detected: "${name}"`, 'info');
+    },
+    [setSyncStatusParent]
+  );
+
   return {
     figmaInput,
     figmaNodeInfo,
     isDetectingLocal,
     parseFigmaLink,
     detectLocalFigmaSelection,
+    applyLiveFigmaSelection,
     importFigmaScreen,
   };
 }

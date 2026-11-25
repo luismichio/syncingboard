@@ -1,11 +1,11 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useMiroPlugin } from './useMiroPlugin';
 import { SyncedImage } from './useMiroSelection';
 import { PLAN } from '@/lib/version';
 import { getOrCreatePairingId, rotatePairingId } from '@/lib/sync/pairingId';
-import { heartbeatRelaySession, releaseLocalRelaySession, setRelayIdentity, sha256Hex } from '@/lib/sync/companionRelayClient';
+import { heartbeatRelaySession, releaseLocalRelaySession, setRelayIdentity, sha256Hex, subscribeRelayLive } from '@/lib/sync/companionRelayClient';
 import { AppHeader } from './components/AppHeader';
 import { TabNav } from './components/TabNav';
 import { BoardStatusFooter } from './components/BoardStatusFooter';
@@ -14,6 +14,7 @@ import { ImportTab } from './components/ImportTab';
 import { SettingsTab } from './components/SettingsTab';
 import { VersionStamp } from '@/components/VersionStamp';
 import { GroupedSyncedImage, ImportPlatform, MiroPluginTab } from './types';
+import { notifyTauriMiroConnect, probeTauriBridge } from '@/lib/sync/tauriBridgeClient';
 
 const MAX_SCALE = PLAN === 'community' ? 2 : 4;
 const AVAILABLE_SCALES = Array.from({ length: MAX_SCALE }, (_, i) => i + 1);
@@ -26,9 +27,13 @@ function buildGroupedItems(selectedItems: SyncedImage[]): GroupedSyncedImage[] {
     if (!groups[key]) {
       const platform = item.platform || 'figma';
       const sourceUrl =
-        platform === 'figma' && item.fileKey && item.nodeId
-          ? `https://www.figma.com/file/${item.fileKey}/?node-id=${encodeURIComponent(item.nodeId)}`
-          : undefined;
+        platform === 'github'
+          ? item.nodeId && item.nodeId !== '*'
+            ? `${item.fileKey}#${encodeURIComponent(item.nodeId)}`
+            : item.fileKey
+          : platform === 'figma' && item.fileKey && item.nodeId
+            ? `https://www.figma.com/file/${item.fileKey}/?node-id=${encodeURIComponent(item.nodeId)}`
+            : undefined;
       groups[key] = {
         key,
         fileKey: item.fileKey,
@@ -48,7 +53,10 @@ function buildGroupedItems(selectedItems: SyncedImage[]): GroupedSyncedImage[] {
   return Object.values(groups);
 }
 
+const emptySubscribe = () => () => {};
+
 export default function MiroPluginPage() {
+  const mounted = useSyncExternalStore(emptySubscribe, () => true, () => false);
   const [propagate, setPropagate] = useState<boolean>(false);
   const [preserveSize, setPreserveSize] = useState<boolean>(false);
 
@@ -56,9 +64,11 @@ export default function MiroPluginPage() {
     isInitMode,
     figmaToken,
     miroToken,
+    githubToken,
     tokensLoading,
     selectedItems,
     setSelectedItems,
+    handleDeselectGroup,
     isSyncing,
     syncStatus,
     figmaInput,
@@ -66,10 +76,13 @@ export default function MiroPluginPage() {
     isDetectingLocal,
     connectFigma,
     connectMiro,
+    connectGithub,
     disconnectFigma,
     disconnectMiro,
+    disconnectGithub,
     parseFigmaLink,
     detectLocalFigmaSelection,
+    applyLiveFigmaSelection,
     importFigmaScreen,
     penpotNodeInfo,
     isDetectingPenpotLocal,
@@ -81,6 +94,7 @@ export default function MiroPluginPage() {
   cooldownSeconds,
   isAnyImageSelected,
     replaceSelectedWidget,
+    githubDocs,
   } = useMiroPlugin(propagate, preserveSize);
 
   const [activeTab, setActiveTab] = useState<MiroPluginTab>('sync');
@@ -115,29 +129,150 @@ export default function MiroPluginPage() {
   }, []);
 
   useEffect(() => {
-    if (!useTauri) return;
+    const wantsTauri = typeof window !== 'undefined' && localStorage.getItem('syncingboard_use_tauri') === 'true';
+    if (!useTauri && !wantsTauri) return;
 
     const check = async () => {
-      try {
-        const res = await fetch('https://local.syncingboard.com:4401/health', {
-          method: 'GET',
-          signal: AbortSignal.timeout(3000),
-          targetAddressSpace: 'loopback',
-        } as unknown as RequestInit);
-        if (res.status !== 200) throw new Error('unreachable');
-        const payload = (await res.json()) as { figmaConnected?: boolean } | null;
-        setFigmaConnected(payload?.figmaConnected === true);
-      } catch {
+      if (localStorage.getItem('syncingboard_use_tauri') !== 'true') return;
+      const health = await probeTauriBridge(3000);
+      if (health && health.status === 'ok') {
+        if (!useTauri) {
+          setUseTauri(true);
+          releaseLocalRelaySession();
+          void notifyTauriMiroConnect();
+        }
+        setFigmaConnected(health.figmaConnected === true);
+      } else {
         setUseTauri(false);
         setFigmaConnected(false);
-        localStorage.setItem('syncingboard_use_tauri', 'false');
       }
     };
 
     void check();
-    const interval = setInterval(check, 30_000);
+    const interval = setInterval(check, 15_000);
     return () => clearInterval(interval);
   }, [useTauri]);
+
+  // Live auto-detect for Figma selection when connected via local Tauri SyncingBridge (0 Ably/Upstash cost)
+  const applyLiveFigmaSelectionRef = useRef(applyLiveFigmaSelection);
+  useEffect(() => {
+    applyLiveFigmaSelectionRef.current = applyLiveFigmaSelection;
+  }, [applyLiveFigmaSelection]);
+
+  useEffect(() => {
+    if (!useTauri || !pairingId) return;
+    let cancelled = false;
+    let unsubscribe: (() => void) | null = null;
+
+    void subscribeRelayLive(pairingId, 'figma', 'selection', (payload) => {
+      if (!cancelled) {
+        applyLiveFigmaSelectionRef.current(payload);
+      }
+    })
+      .then((cleanup) => {
+        if (cancelled) {
+          cleanup();
+        } else {
+          unsubscribe = cleanup;
+        }
+      })
+      .catch(() => {
+        // Local bridge may be restarting; manual detect still works
+      });
+
+    return () => {
+      cancelled = true;
+      if (unsubscribe) unsubscribe();
+    };
+  }, [useTauri, pairingId]);
+
+  // Global Tauri Hotkey listener (Ctrl/Cmd+Shift+I import, R replace, S sync)
+  const hotkeyHandlersRef = useRef({
+    onImport: () => {},
+    onReplace: () => {},
+    onSync: () => {},
+  });
+  useEffect(() => {
+    hotkeyHandlersRef.current = {
+      onImport: () => {
+        if (isSyncing || !figmaNodeInfo || !miroToken) return;
+        void importFigmaScreen(importFormat, importScale);
+      },
+      onReplace: () => {
+        if (isSyncing || !figmaNodeInfo || !miroToken) return;
+        void replaceSelectedWidget(
+          'figma',
+          figmaNodeInfo.fileKey,
+          figmaNodeInfo.nodeId,
+          figmaNodeInfo.name,
+          importFormat,
+          importScale
+        );
+      },
+      onSync: () => {
+        if (isSyncing || !miroToken || selectedItems.length === 0) return;
+        void syncSelectedScreens();
+      },
+    };
+  }, [
+    isSyncing,
+    figmaNodeInfo,
+    miroToken,
+    importFormat,
+    importScale,
+    importFigmaScreen,
+    replaceSelectedWidget,
+    selectedItems.length,
+    syncSelectedScreens,
+  ]);
+
+  useEffect(() => {
+    if (!useTauri || !pairingId) return;
+    let cancelled = false;
+    let unsubscribe: (() => void) | null = null;
+
+    void subscribeRelayLive(pairingId, 'figma', 'hotkey', (payload) => {
+      if (cancelled) return;
+      const action = typeof payload.action === 'string' ? payload.action : '';
+      if (action === 'import') hotkeyHandlersRef.current.onImport();
+      else if (action === 'replace') hotkeyHandlersRef.current.onReplace();
+      else if (action === 'sync') hotkeyHandlersRef.current.onSync();
+    })
+      .then((cleanup) => {
+        if (cancelled) {
+          cleanup();
+        } else {
+          unsubscribe = cleanup;
+        }
+      })
+      .catch(() => {
+        // Ignore transient bridge restart
+      });
+
+    return () => {
+      cancelled = true;
+      if (unsubscribe) unsubscribe();
+    };
+  }, [useTauri, pairingId]);
+
+  const handleToggleTauri = async () => {
+    if (useTauri) {
+      setUseTauri(false);
+      setFigmaConnected(false);
+      localStorage.setItem('syncingboard_use_tauri', 'false');
+    } else {
+      const health = await probeTauriBridge(2000);
+      if (health && health.status === 'ok') {
+        setUseTauri(true);
+        setFigmaConnected(health.figmaConnected === true);
+        localStorage.setItem('syncingboard_use_tauri', 'true');
+        releaseLocalRelaySession();
+        void notifyTauriMiroConnect();
+      } else {
+        alert('SyncingBridge desktop app is not running on 127.0.0.1:4401. Please launch SyncingBridge first.');
+      }
+    }
+  };
 
   // Relay identity (1 board per Miro user, v0.15.1): SHA-256 of
   // miro.currentUser.id — guests with OAuth are first-class users.
@@ -227,6 +362,84 @@ export default function MiroPluginPage() {
   };
 
   const groupedItems = useMemo(() => buildGroupedItems(selectedItems), [selectedItems]);
+
+  const handleGitHubSectionChange = async (
+    itemIds: string[],
+    sectionId: string,
+    sectionTitle: string
+  ): Promise<void> => {
+    if (typeof window === 'undefined') return;
+    const miro = window.miro;
+    if (!miro) return;
+
+    try {
+      const selection = await miro.board.getSelection();
+      for (const itemId of itemIds) {
+        const widget = selection.find((w) => w.id === itemId);
+        if (!widget) continue;
+        const metadata = (await widget.getMetadata()) as Record<string, unknown> | undefined;
+        const syncData = metadata?.syncingboard as Record<string, unknown> | undefined;
+        if (!syncData || syncData.platform !== 'github') continue;
+
+        await widget.setMetadata('syncingboard', {
+          ...syncData,
+          sectionId,
+          sectionTitle,
+          contentHash: '',
+          etag: null,
+        });
+        await widget.sync();
+      }
+
+      setSelectedItems((prev) =>
+        prev.map((item) =>
+          itemIds.includes(item.id)
+            ? { ...item, nodeId: sectionId, nodeName: sectionTitle, title: sectionTitle }
+            : item
+        )
+      );
+    } catch (err) {
+      console.error('Failed to update GitHub section metadata:', err);
+    }
+  };
+
+  const handleGitHubBranchChange = async (
+    itemIds: string[],
+    nextUrl: string,
+    nextBranch: string
+  ): Promise<void> => {
+    if (typeof window === 'undefined') return;
+    const miro = window.miro;
+    if (!miro) return;
+
+    try {
+      const selection = await miro.board.getSelection();
+      for (const itemId of itemIds) {
+        const widget = selection.find((w) => w.id === itemId);
+        if (!widget) continue;
+        const metadata = (await widget.getMetadata()) as Record<string, unknown> | undefined;
+        const syncData = metadata?.syncingboard as Record<string, unknown> | undefined;
+        if (!syncData || syncData.platform !== 'github') continue;
+
+        await widget.setMetadata('syncingboard', {
+          ...syncData,
+          url: nextUrl,
+          branch: nextBranch,
+          contentHash: '',
+          etag: null,
+        });
+        await widget.sync();
+      }
+
+      setSelectedItems((prev) =>
+        prev.map((item) =>
+          itemIds.includes(item.id) ? { ...item, fileKey: nextUrl, etag: undefined } : item
+        )
+      );
+    } catch (err) {
+      console.error('Failed to update GitHub branch metadata:', err);
+    }
+  };
 
   const handleGroupSettingChange = async (
     itemIds: string[],
@@ -318,8 +531,8 @@ export default function MiroPluginPage() {
     }
   };
 
-  if (isInitMode === null) {
-    return null;
+  if (!mounted || isInitMode === null) {
+    return <div className="bg-bg-page min-h-screen"></div>;
   }
 
   if (isInitMode === true) {
@@ -333,6 +546,7 @@ export default function MiroPluginPage() {
         tokensLoading={tokensLoading}
         figmaToken={figmaToken}
         miroToken={miroToken}
+        useTauri={useTauri}
       />
 
       <TabNav
@@ -357,8 +571,12 @@ export default function MiroPluginPage() {
           hasMiroToken={!!miroToken}
             onSync={syncSelectedScreens}
             onGroupSettingChange={handleGroupSettingChange}
+            onGitHubSectionChange={handleGitHubSectionChange}
+            onGitHubBranchChange={handleGitHubBranchChange}
             onRefreshNodeName={handleRefreshNodeName}
+            onRemoveGroup={handleDeselectGroup}
             availableScales={AVAILABLE_SCALES}
+            useTauri={useTauri}
           />
         )}
 
@@ -392,6 +610,7 @@ export default function MiroPluginPage() {
             detectLocalPenpotSelection={detectLocalPenpotSelection}
             importPenpotScreen={importPenpotScreen}
             replaceSelectedWidget={replaceSelectedWidget}
+            githubDocs={githubDocs}
           />
         )}
 
@@ -400,10 +619,13 @@ export default function MiroPluginPage() {
             tokensLoading={tokensLoading}
             figmaToken={figmaToken}
             miroToken={miroToken}
+            githubToken={githubToken}
             connectFigma={connectFigma}
             connectMiro={connectMiro}
+            connectGithub={connectGithub}
             disconnectFigma={disconnectFigma}
             disconnectMiro={disconnectMiro}
+            disconnectGithub={disconnectGithub}
             copiedPairing={copiedPairing}
             pairingId={pairingId}
             copyPairingId={copyPairingId}
@@ -413,6 +635,8 @@ export default function MiroPluginPage() {
               setCopiedPairing(false);
             }}
             useTauri={useTauri}
+            onToggleTauri={handleToggleTauri}
+            figmaConnected={figmaConnected}
             defaultPngScale={defaultPngScale}
             onDefaultPngScaleChange={handleDefaultPngScaleChange}
             availableScales={AVAILABLE_SCALES}

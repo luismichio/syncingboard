@@ -9,6 +9,47 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.18.0] - 2026-11-25
+
+### Added
+- **GitHub Docs-as-Code Text Sync & OAuth (Miro, FigJam & Penpot)** — added deterministic Markdown section parser (`src/lib/sync/markdownParser.ts`), XSS-safe Miro HTML & character-range dialect compiler (`src/lib/sync/markdownCompiler.ts`), SSRF-guarded GitHub Markdown & branch routes (`GET /api/github/markdown` with ETag `304` diffing + `&branch=` override, `GET /api/github/branches`), GitHub OAuth endpoints (`/api/oauth/github/auth`, `/api/oauth/github/callback`) with a **GitHub Status** Connect/Disconnect card in Settings, **Import → DOCS** + unified **Sync** tab updates with inline **Branch** & **Section** switchers in both **Miro** (`text`/`shape`/`sticky_note`) and **FigJam** (`figjam-place-doc`/`figjam-update-doc`), and a new **DOCS** tab in the **Penpot Companion Plugin** (`content:write` permission, `create-git-text`/`update-git-text`/`scan-git-shapes` with `TextShape.getRange` styling, inline Branch & Section switchers, and Settings OAuth).
+- **Configurable Global Shortcuts (`SyncingBridge`)** — added `tauri-plugin-global-shortcut` in `tauri-bridge` with configurable OS-wide hotkeys (`Ctrl/Cmd+Shift+I` Import, `Ctrl/Cmd+Shift+R` Replace, `Ctrl/Cmd+Shift+S` Sync) persisted to `hotkeys.json`, plus live Figma auto-detect in Miro via same-origin SSE (`/api/bridge/stream`).
+- **Zero-Cloud Local Figma Export & Direct Miro Image PATCH (Tauri `SyncingBridge`)** — added `POST /miro/update-image` (50 MB body limit, direct multipart `PATCH` to Miro REST API v2 with `preserveSize` geometry verification) in `tauri-bridge/src-tauri/src/lib.rs`, local `node.exportAsync()` in `figma-plugin/code.js` (`0` Figma REST API calls for open files, with automatic cloud fallback for closed files), and hybrid split batch limits (`50` local Figma / `3` cloud Penpot when Tauri is active; `3` total for non-Tauri cloud users).
+- **Tauri Desktop Bridge — Native WebSocket Broker (`ws://127.0.0.1:4401`)** — replaced the self-signed HTTPS server in `tauri-bridge/src-tauri/src/lib.rs` with an Axum/Tokio WebSocket & HTTP broker (`/ws`, `/relay`, `/health`, `/miro/connect`) with Private Network Access (`Access-Control-Allow-Private-Network: true`), live `sources` / `targets` channel tracking, pause/resume controls (`set_broker_enabled`), and zero-restart dynamic port rebinding (`set_broker_port`).
+- **Zero-Cloud Local Transport Adapter (`src/lib/sync/tauriBridgeClient.ts` & `companionRelayClient.ts`)** — added 3-tier local broker probing (`/api/bridge/health`, `ws://127.0.0.1:4401/ws`, `http://127.0.0.1:4401/health`), local WebSocket command/selection/export routing in both Miro/FigJam and Companion UIs (`src/companion-core/runtime.ts`), and automatic fallback to Ably Cloud Relay if the desktop bridge disconnects.
+- **Cloud Lease Release on Local Bridge Activation** — enabling `SyncingBridge (Local)` in Miro or FigJam immediately closes any open Ably connection and releases the community cloud slot lease via `releaseLocalRelaySession()`.
+
+### Security
+- **Dependency Security Upgrades (83 Dependabot Alerts Resolved)** — upgraded `next` & `eslint-config-next` (`16.4.5`), `undici` (`7.30.2`), `vite` (`8.3.8` root / `6.4.6` `tauri-bridge`), `vitest` & `@vitest/mocker` (`4.1.12`), `dompurify` (`3.5.0`), `sharp` (`0.35.5`), `js-yaml` (`4.3.2`), `nanoid` (`3.3.20`), `source-map-js` (`1.2.4`), `browserslist` (`4.29.6`), `postcss-selector-parser` (`6.1.6`), `brace-expansion` (`1.1.22`), `baseline-browser-mapping` (`2.11.39`), and Rust `rustls` (`0.23.46`).
+
+### Fixed
+- **OAuth Token Durability (Miro, Figma & GitHub Re-Auth Prevention)** — added `'github'` refresh support to `POST /api/oauth/refresh` (fixing 8-hour GitHub App disconnects), added in-memory single-flight + cross-tab Web Locks (`navigator.locks`) deduplication + `BroadcastChannel` sync in `src/lib/tokens.ts` (preventing concurrent tabs from invalidating Miro's single-use rotating refresh tokens), fixed `useMiroSync.ts` / `useMiroPlugin.ts` / `useFigmaImporter.ts` to always call `getValidToken()` before falling back to React state, added `visibilitychange` wake-from-sleep refresh in `useAuthTokens.ts`, and raised `RATE_LIMIT_COMMUNITY_OAUTH_REFRESH_PER_MIN` from `3` to `10`.
+
+## [0.17.2] - 2026-08-16
+
+### Added
+- **Board-Synchronized Selection Deselection ("✕" Group Card Dismissal)** — added interactive group card dismissal in `SyncTab.tsx`, allowing designers to dismiss individual frame groups directly inside the Miro sidebar or FigJam mirror. Dismissing automatically deselects the corresponding widgets on the Miro board canvas via `miro.board.deselect` and on the FigJam canvas via `figjam-deselect`.
+- **Dynamic Batch Limit Re-Evaluation** — dismissing groups instantly recalculates the active batch count: if an initial board selection exceeds the 3-item limit, dismissing groups until the count is 3 or less immediately clears the warning banner and activates the Sync button.
+- **Unit Test Suite for Deselection (`src/app/miro-plugin/__tests__/deselectSync.test.ts`)** — verified multi-copy group removal, ID filtering, and batch boundary thresholds (5/5 passing tests).
+
+### Fixed
+- **React Hydration Mismatch on `/miro-plugin`** — added a `mounted` lifecycle guard to `src/app/miro-plugin/page.tsx` ensuring SSR and initial client hydration payloads match identically before reading URL search parameters.
+- **Next.js 16 `<Script>` Tag Migration** — converted raw HTML `<script>` tags in `src/app/layout.tsx` to Next.js `<Script>` components with `beforeInteractive` and `afterInteractive` strategies, eliminating Turbopack component script warnings.
+- **Miro SDK Deselect Validation** — updated `useMiroPlugin.ts` to call `miro.board.deselect({ id })` per item, satisfying Miro Web SDK v2 schema validation.
+
+## [0.17.1] - 2026-08-15
+
+### Added
+- **Human-Readable Cooldown & Rate Limit Formatting (`src/lib/formatDuration.ts`)** — introduced smart duration and reset-time formatting (`formatDuration`, `formatCooldownTime`). Replaced raw second outputs (e.g. `43200s`) with scaled units (`45s`, `1m 30s`, `12h`) and local clock times for long cooldowns (e.g. `12h (at 10:18 AM)`), integrated across Miro sync, FigJam plugin, and the Sync button.
+- **Unit Test Suite for Duration Formatter (`src/lib/formatDuration.test.ts`)** — comprehensive test coverage for short bursts, minute/second boundaries, hour/minute spans, day calculations, and clock time formatting.
+
+### Fixed
+- **Miro Sync Missing Node State Feedback** — resolved false success reporting in `useMiroSync.ts` when a frame's Node ID changed or was deleted in Figma. Sync now tracks actual updated counts vs missing nodes and surfaces an explicit error (`Frame "Name" (ID: 01:01) was not found in the Figma file`).
+- **FigJam Missing Node Feedback** — updated `useFigJamPlugin.ts` to output descriptive missing frame error messages matching Miro's error clarity.
+- **Native FigJam Export Filename** — updated `figma-plugin/code.js` (`figjamPlace` and `figjamReplace`) to synchronize the canvas layer's `node.name` property with the clean frame name during placement, in-place syncs, and node swaps, ensuring FigJam's native right-click export produces `{FrameName}.png` rather than `Untitled.png`.
+
 ## [0.17.0] - 2026-08-14
 
 ### Added

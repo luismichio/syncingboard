@@ -1,5 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { decodeHtmlEntities } from '@/lib/decodeHtmlEntities';
+import { formatDuration } from '@/lib/formatDuration';
+import { evaluateBatchLimits } from '@/lib/sync/batchLimits';
+import { getValidToken } from '@/lib/tokens';
 import { GroupedSyncedImage } from '../types';
 
 interface SyncTabProps {
@@ -16,11 +19,16 @@ interface SyncTabProps {
   hasMiroToken: boolean;
   onSync: () => void;
   onGroupSettingChange: (itemIds: string[], key: 'format' | 'scale', value: unknown) => void;
+  onGitHubSectionChange?: (itemIds: string[], sectionId: string, sectionTitle: string) => Promise<void> | void;
+  onGitHubBranchChange?: (itemIds: string[], nextUrl: string, nextBranch: string) => Promise<void> | void;
   onRefreshNodeName?: (fileKey: string, nodeId: string, platform: 'figma' | 'penpot') => void;
+  onRemoveGroup?: (groupKey: string, itemIds: string[]) => void;
   availableScales: number[];
   /** FigJam mirror mode: the list is a registry of placed mirrors, not a
    * Miro canvas selection — different wording and no 3-item cap. */
   mirrorMode?: boolean;
+  /** Local Tauri SyncingBridge active: lifts Figma batch cap to 50 while keeping Penpot at 3. */
+  useTauri?: boolean;
 }
 
 export function SyncTab({
@@ -37,11 +45,96 @@ export function SyncTab({
   hasMiroToken,
   onSync,
   onGroupSettingChange,
+  onGitHubSectionChange,
+  onGitHubBranchChange,
   onRefreshNodeName,
+  onRemoveGroup,
   availableScales,
   mirrorMode = false,
+  useTauri = false,
 }: SyncTabProps) {
   const [copiedNodeId, setCopiedNodeId] = useState<string | null>(null);
+  const [sectionsByUrl, setSectionsByUrl] = useState<
+    Record<string, { id: string; title: string; level: number }[]>
+  >({});
+  const [docMetaByUrl, setDocMetaByUrl] = useState<
+    Record<string, { owner: string; repo: string; branch: string; path: string }>
+  >({});
+  const [branchesByRepo, setBranchesByRepo] = useState<Record<string, string[]>>({});
+  const fetchedUrlsRef = useRef<Set<string>>(new Set());
+  const fetchedReposRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    const githubUrls = [
+      ...new Set(
+        groupedItems
+          .filter((g) => g.platform === 'github' && g.fileKey)
+          .map((g) => g.fileKey)
+      ),
+    ];
+    for (const url of githubUrls) {
+      if (fetchedUrlsRef.current.has(url)) continue;
+      fetchedUrlsRef.current.add(url);
+      void (async () => {
+        try {
+          const headers: Record<string, string> = {};
+          const oauthTok = await getValidToken('github');
+          let pat = '';
+          try {
+            pat = window.localStorage.getItem('syncingboard_github_pat')?.trim() || '';
+          } catch {
+            // ignore storage errors
+          }
+          const tok = oauthTok?.trim() || pat;
+          if (tok) headers.Authorization = `Bearer ${tok}`;
+
+          const res = await fetch(`/api/github/markdown?url=${encodeURIComponent(url)}`, {
+            method: 'GET',
+            headers,
+            cache: 'no-store',
+          });
+          if (!res.ok) return;
+          const data = (await res.json()) as {
+            owner?: string;
+            repo?: string;
+            branch?: string;
+            path?: string;
+            sections?: { id: string; title: string; level: number }[];
+          };
+          if (Array.isArray(data.sections)) {
+            setSectionsByUrl((prev) => ({ ...prev, [url]: data.sections || [] }));
+          }
+          if (data.owner && data.repo && data.branch && data.path) {
+            const meta = {
+              owner: data.owner,
+              repo: data.repo,
+              branch: data.branch,
+              path: data.path,
+            };
+            setDocMetaByUrl((prev) => ({ ...prev, [url]: meta }));
+            const repoKey = `${data.owner}/${data.repo}`;
+            if (!fetchedReposRef.current.has(repoKey)) {
+              fetchedReposRef.current.add(repoKey);
+              const bRes = await fetch(
+                `/api/github/branches?owner=${encodeURIComponent(data.owner)}&repo=${encodeURIComponent(data.repo)}`,
+                { headers, cache: 'no-store' }
+              );
+              if (bRes.ok) {
+                const bData = (await bRes.json()) as { branches?: string[] };
+                if (Array.isArray(bData.branches)) {
+                  setBranchesByRepo((prev) => ({ ...prev, [repoKey]: bData.branches || [] }));
+                }
+              }
+            }
+          }
+        } catch {
+          fetchedUrlsRef.current.delete(url);
+        }
+      })();
+    }
+  }, [groupedItems]);
+
+  const batchCheck = evaluateBatchLimits(groupedItems, Boolean(useTauri));
   return (
     <div className="flex-grow flex flex-col justify-between">
       <div className="space-y-3">
@@ -66,7 +159,7 @@ export function SyncTab({
                 >
                   <div className="absolute top-2 right-2 flex items-center gap-1.5">
                     <span className="text-[8px] font-mono font-bold uppercase tracking-wider text-accent border border-accent/40 bg-transparent px-1.5 py-0.5 rounded">
-                      {group.platform === 'penpot' ? 'Penpot' : 'Figma'}
+                      {group.platform === 'penpot' ? 'Penpot' : group.platform === 'github' ? 'GitHub' : 'Figma'}
                     </span>
 
                     {group.widgets.length > 1 && (
@@ -74,16 +167,32 @@ export function SyncTab({
                         x{group.widgets.length}
                       </span>
                     )}
+
+                    {onRemoveGroup && (
+                      <button
+                        type="button"
+                        onClick={() => onRemoveGroup(group.key, group.widgets.map((w) => w.id))}
+                        disabled={isSyncing}
+                        className="p-0.5 text-text-muted hover:text-text-page hover:bg-bg-page/40 rounded transition-colors disabled:opacity-40 cursor-pointer ml-0.5"
+                        title="Deselect from sync list"
+                        aria-label={`Deselect ${decodeHtmlEntities(group.nodeName)}`}
+                      >
+                        <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <line x1="18" y1="6" x2="6" y2="18" />
+                          <line x1="6" y1="6" x2="18" y2="18" />
+                        </svg>
+                      </button>
+                    )}
                   </div>
 
-                  <div className="flex flex-col pr-16">
+                  <div className="flex flex-col pr-24">
                     <div className="flex items-center gap-1.5 min-w-0">
                       <span className="text-xs font-semibold text-text-page truncate">
                         {decodeHtmlEntities(group.nodeName)}
                       </span>
-                      {onRefreshNodeName && (
+                      {onRefreshNodeName && group.platform !== 'github' && (
                         <button
-                          onClick={() => onRefreshNodeName(group.fileKey, group.nodeId, group.platform)}
+                          onClick={() => onRefreshNodeName(group.fileKey, group.nodeId, group.platform as 'figma' | 'penpot')}
                           disabled={isSyncing}
                           className="shrink-0 p-0.5 text-text-muted hover:text-accent transition-colors disabled:opacity-40 cursor-pointer"
                           title="Refresh frame name from source"
@@ -101,9 +210,11 @@ export function SyncTab({
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-[9px] font-mono text-text-muted hover:text-accent truncate cursor-pointer"
-                          title={`Open in source app — ${group.url}`}
+                          title={`Open in source — ${group.url}`}
                         >
-                          ID: {group.nodeId} ↗
+                          {group.platform === 'github'
+                            ? `${group.nodeId === '*' ? 'Full doc' : `#${group.nodeId}`} ↗`
+                            : `ID: ${group.nodeId} ↗`}
                         </a>
                       ) : (
                         <span className="text-[9px] font-mono text-text-muted truncate">
@@ -134,6 +245,80 @@ export function SyncTab({
                     </div>
                   </div>
 
+                  {group.platform === 'github' ? (
+                  <div className="flex gap-2 mt-1 pt-2 border-t border-border-card/30">
+                    {onGitHubBranchChange && docMetaByUrl[group.fileKey] && (
+                      <div className="w-[86px] shrink-0 flex flex-col gap-0.5">
+                        <span className="text-[8px] font-mono text-text-muted uppercase tracking-wider">Branch</span>
+                        <select
+                          value={docMetaByUrl[group.fileKey].branch}
+                          disabled={isSyncing}
+                          onChange={(e) => {
+                            const nextBranch = e.target.value;
+                            const meta = docMetaByUrl[group.fileKey];
+                            if (!meta || !nextBranch || nextBranch === meta.branch) return;
+                            const nextUrl = `https://github.com/${meta.owner}/${meta.repo}/blob/${nextBranch}/${meta.path}`;
+                            void onGitHubBranchChange(
+                              group.widgets.map((w) => w.id),
+                              nextUrl,
+                              nextBranch
+                            );
+                          }}
+                          className="bg-bg-page border border-border-card text-[10px] font-mono rounded px-1 py-0.5 focus:outline-none focus:border-accent text-accent w-full cursor-pointer disabled:opacity-50"
+                        >
+                          {!(branchesByRepo[`${docMetaByUrl[group.fileKey].owner}/${docMetaByUrl[group.fileKey].repo}`] || []).includes(
+                            docMetaByUrl[group.fileKey].branch
+                          ) && (
+                            <option value={docMetaByUrl[group.fileKey].branch}>
+                              {docMetaByUrl[group.fileKey].branch}
+                            </option>
+                          )}
+                          {(branchesByRepo[`${docMetaByUrl[group.fileKey].owner}/${docMetaByUrl[group.fileKey].repo}`] || []).map((b) => (
+                            <option key={b} value={b}>
+                              {b}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0 flex flex-col gap-0.5">
+                      <span className="text-[8px] font-mono text-text-muted uppercase tracking-wider">Section</span>
+                      <select
+                        value={group.nodeId}
+                        disabled={isSyncing || !onGitHubSectionChange}
+                        onChange={(e) => {
+                          if (!onGitHubSectionChange) return;
+                          const nextId = e.target.value;
+                          const list = sectionsByUrl[group.fileKey] || [];
+                          const found = list.find((s) => s.id === nextId);
+                          const nextTitle =
+                            nextId === '*'
+                              ? group.fileKey.split('/').pop() || 'Full Document'
+                              : found?.title || nextId;
+                          void onGitHubSectionChange(
+                            group.widgets.map((w) => w.id),
+                            nextId,
+                            nextTitle
+                          );
+                        }}
+                        className="bg-bg-page border border-border-card text-[10px] font-mono rounded px-1.5 py-0.5 focus:outline-none focus:border-accent text-text-page w-full cursor-pointer disabled:opacity-50"
+                      >
+                        <option value="*">Full Document</option>
+                        {!(sectionsByUrl[group.fileKey] || []).some((s) => s.id === group.nodeId) &&
+                          group.nodeId !== '*' && (
+                            <option value={group.nodeId}>
+                              {group.nodeName} (#{group.nodeId})
+                            </option>
+                          )}
+                        {(sectionsByUrl[group.fileKey] || []).map((sec) => (
+                          <option key={sec.id} value={sec.id}>
+                            {'#'.repeat(sec.level)} {sec.title}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  ) : (
                   <div className="flex gap-2 mt-1 pt-2 border-t border-border-card/30">
                     {!mirrorMode && (
                     <div className="flex-1 flex flex-col gap-0.5">
@@ -164,6 +349,7 @@ export function SyncTab({
                       </div>
                     )}
                   </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -216,27 +402,27 @@ export function SyncTab({
               </label>
             )}
 
-            {groupedItems.length > 3 && (
+            {!mirrorMode && batchCheck.blocked && (
               <div className="flex items-start gap-2 p-2.5 mt-2 rounded-md bg-bg-card border border-amber-500/60">
                 <svg className="w-4 h-4 shrink-0 mt-0.5 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
                 </svg>
                 <span className="text-xs font-mono leading-snug text-text-page">
-                  Only 3 items can be synced at once. Deselect some to continue.
+                  {batchCheck.reason}
                 </span>
               </div>
             )}
 
             <button
               onClick={onSync}
-              disabled={isSyncing || cooldownSeconds > 0 || !hasMiroToken || groupedItems.length > 3}
+              disabled={isSyncing || cooldownSeconds > 0 || !hasMiroToken || (!mirrorMode && batchCheck.blocked)}
               className="w-full mt-2 font-mono font-bold text-xs py-2.5 rounded bg-accent text-bg-page hover:opacity-90 transition disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
             >
               {cooldownSeconds > 0
-          ? `COMMUNITY COOLDOWN · ${cooldownSeconds}s`
-          : mirrorMode
-            ? (syncAllCopies ? 'SYNC + UPDATE ALL COPIES' : 'SYNC SELECTED')
-            : (syncAllCopies ? 'SYNC + UPDATE ALL COPIES' : 'SYNC SELECTED')}
+                ? `COMMUNITY COOLDOWN · ${formatDuration(cooldownSeconds)}`
+                : mirrorMode
+                ? (syncAllCopies ? 'SYNC + UPDATE ALL COPIES' : 'SYNC SELECTED')
+                : (syncAllCopies ? 'SYNC + UPDATE ALL COPIES' : 'SYNC SELECTED')}
             </button>
           </div>
         ) : (

@@ -1,9 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { SyncedImage } from './useMiroSelection';
-import { callPenpotMcpTool } from '@/lib/sync/companionRelayClient';
+import { callPenpotMcpTool, broadcastSyncActivity, exportFigmaNodeLocally } from '@/lib/sync/companionRelayClient';
+import { updateMiroImageViaTauri } from '@/lib/sync/tauriBridgeClient';
+import { evaluateBatchLimits } from '@/lib/sync/batchLimits';
+import { compileToMiroHtml } from '@/lib/sync/markdownCompiler';
+import type { GitHubDocPayload } from './useGitHubDocsImporter';
 import { getValidToken } from '@/lib/tokens';
 import { trackEvent } from '@/lib/analytics';
 import { decodeHtmlEntities } from '@/lib/decodeHtmlEntities';
+import { formatDuration, formatCooldownTime } from '@/lib/formatDuration';
 import { MiroAdapter } from './MiroAdapter';
 
 /**
@@ -63,12 +68,14 @@ const resetAt = typeof data.reset === 'number' && Number.isFinite(data.reset)
 setCurrentTime(Date.now());
 setCooldownUntil(resetAt);
 const seconds = Math.max(1, Math.ceil((resetAt - Date.now()) / 1000));
-return `SyncingBoard Community limit reached. Retry in ${seconds}s.`;
+const timeFormatted = formatCooldownTime(seconds, resetAt);
+return `SyncingBoard Community limit reached. Retry in ${timeFormatted}.`;
 };
 
 const syncSelectedScreens = async () => {
 if (cooldownSeconds > 0) {
-setSyncStatus(`Community cooldown active. Retry in ${cooldownSeconds}s.`, 'info');
+const timeFormatted = formatDuration(cooldownSeconds);
+setSyncStatus(`Community cooldown active. Retry in ${timeFormatted}.`, 'info');
 return;
 }
     if (isSyncing) return;
@@ -78,8 +85,9 @@ return;
     if (!miro) return;
     const adapter = new MiroAdapter(miro.board);
 
-    // Get a fresh Miro token right before syncing — the one from mount may have expired
-    const freshMiroToken = miroToken || await getValidToken('miro');
+    // Always check getValidToken() first so expired React state triggers silent refresh
+    const freshMiroToken = (await getValidToken('miro')) || miroToken;
+    const freshFigmaToken = (await getValidToken('figma')) || figmaToken;
     if (!freshMiroToken) {
       setIsSyncing(false);
       setSyncStatus('Miro token unavailable. Please reconnect Miro.');
@@ -88,6 +96,8 @@ return;
 
     trackEvent('sync_start', `items:${selectedItems.length}`);
     setIsSyncing(true);
+    const pairingId = typeof window !== 'undefined' ? localStorage.getItem('syncingboard_pairing_id') || '' : '';
+    void broadcastSyncActivity(pairingId, `Sync started: updating ${selectedItems.length} screen(s) on Miro board...`);
     try {
       setSyncStatus('Preparing items for sync...', 'progress');
       let boardId: string;
@@ -112,7 +122,7 @@ return;
         width?: number;
         format?: 'png' | 'svg';
         scale?: number;
-        platform?: 'figma' | 'penpot';
+        platform?: 'figma' | 'penpot' | 'github';
       };
 
 
@@ -128,6 +138,16 @@ return;
         // the 10/min Miro image-update window.
         const sweptKeys = new Set<string>();
         for (const selected of selectedItems) {
+          if (selected.platform === 'github') {
+            itemsToSync.push({
+              id: selected.id,
+              fileKey: selected.fileKey,
+              nodeId: selected.nodeId,
+              nodeName: selected.nodeName,
+              platform: 'github',
+            });
+            continue;
+          }
           const sweepKey = `${selected.platform || 'figma'}|${selected.fileKey}|${selected.nodeId}`;
           if (sweptKeys.has(sweepKey)) continue;
           sweptKeys.add(sweepKey);
@@ -145,7 +165,7 @@ return;
           for (const match of matches) {
             let format: 'png' | 'svg' = selected.format || (selected.platform === 'penpot' ? 'svg' : 'png');
             let scale = selected.scale || 1;
-            let platform = selected.platform || 'figma';
+            let platform: 'figma' | 'penpot' | 'github' = selected.platform || 'figma';
 
             let storedWidth: number | undefined;
             try {
@@ -153,7 +173,7 @@ return;
               const syncData = metadata?.syncingboard as { 
                 format?: 'png' | 'svg'; 
                 scale?: number;
-                platform?: 'figma' | 'penpot';
+                platform?: 'figma' | 'penpot' | 'github';
                 width?: number;
                 height?: number;
               } | undefined;
@@ -217,17 +237,23 @@ return;
         return;
       }
 
-      // Enforce batch limit of 3 unique images (different fileKey + nodeId).
+      // Enforce hybrid batch limits (Cloud: 3 total; Local Tauri: 50 Figma + 3 Penpot).
       // Copies at different scales of the same image are NOT counted separately.
-      // The UI already blocks the sync button when >3 groups are selected, so this
-      // is a defensive check — silently truncating would hide bugs.
-      const MAX_BATCH_SIZE = 3;
-      const uniqueImages = new Set(itemsToSync.map(i => `${i.fileKey}|${i.nodeId}`));
-      if (uniqueImages.size > MAX_BATCH_SIZE) {
-        throw new Error(`Can only sync up to ${MAX_BATCH_SIZE} different images at once. Deselect some to continue.`);
+      const isTauriMode =
+        typeof window !== 'undefined' && localStorage.getItem('syncingboard_use_tauri') === 'true';
+      const uniqueGroupMap = new Map<string, { platform: 'figma' | 'penpot' | 'github' }>();
+      for (const item of itemsToSync) {
+        const key = `${item.fileKey}|${item.nodeId}`;
+        if (!uniqueGroupMap.has(key)) {
+          uniqueGroupMap.set(key, { platform: item.platform || 'figma' });
+        }
       }
-      if (itemsToSync.length > MAX_BATCH_SIZE) {
-        setSyncStatus(`Syncing ${itemsToSync.length} widget(s) across ${uniqueImages.size} image(s)`);
+      const batchCheck = evaluateBatchLimits([...uniqueGroupMap.values()], isTauriMode);
+      if (batchCheck.blocked) {
+        throw new Error(batchCheck.reason || 'Batch limit exceeded. Deselect some items to continue.');
+      }
+      if (itemsToSync.length > 3) {
+        setSyncStatus(`Syncing ${itemsToSync.length} widget(s) across ${uniqueGroupMap.size} item(s)`);
       }
 
       // renderCache: "fileKey|nodeId|format" -> base64 data URL
@@ -235,16 +261,14 @@ return;
       const renderCache = new Map<string, string>();
       const nameCache = new Map<string, string>();
 
-      // Partition into Figma and Penpot targets
-      const figmaTargets = itemsToSync.filter(t => t.platform !== 'penpot');
-      const penpotTargets = itemsToSync.filter(t => t.platform === 'penpot');
+      // Partition into Figma, Penpot, and GitHub Docs targets
+      const githubTargets = itemsToSync.filter(t => t.platform === 'github');
+      const imageTargets = itemsToSync.filter(t => t.platform !== 'github');
+      const figmaTargets = imageTargets.filter(t => t.platform !== 'penpot');
+      const penpotTargets = imageTargets.filter(t => t.platform === 'penpot');
 
-      // --- Figma Batch Rendering ---
+      // --- Figma Rendering (Local Companion exportAsync() first when Tauri is active, cloud fallback) ---
       if (figmaTargets.length > 0) {
-        if (!figmaToken) {
-          throw new Error('Figma token missing. Please connect Figma to sync Figma frames.');
-        }
-
         // Group unique nodes by fileKey, format, and scale
         const groups = new Map<string, Set<string>>();
         for (const item of figmaTargets) {
@@ -257,25 +281,66 @@ return;
           groups.get(groupKey)!.add(item.nodeId);
         }
 
-        const totalGroups = groups.size;
-        let groupIndex = 0;
+        // Fast path: when Tauri is active, export open-file Figma frames locally via node.exportAsync()
+        const cloudFallbackGroups = new Map<string, string[]>();
+        if (isTauriMode && pairingId) {
+          for (const [groupKey, nodeIdSet] of groups) {
+            const [fileKey, format, scaleStr] = groupKey.split('|');
+            const scale = Number(scaleStr);
+            const fallbackIds: string[] = [];
 
-        for (const [groupKey, nodeIdSet] of groups) {
-          groupIndex++;
-          const [fileKey, format, scaleStr] = groupKey.split('|');
-          const scale = Number(scaleStr);
-          const nodeIds = [...nodeIdSet];
+            for (const nodeId of nodeIdSet) {
+              setSyncStatus(`Exporting Figma frame locally (${nodeId})...`);
+              const localExport = await exportFigmaNodeLocally(pairingId, {
+                fileKey,
+                nodeId,
+                format: format === 'svg' ? 'svg' : 'png',
+                scale,
+              });
+              if (localExport?.dataUrl) {
+                renderCache.set(`${fileKey}|${nodeId}|${format}|${scale}`, localExport.dataUrl);
+                if (localExport.name) {
+                  nameCache.set(`${fileKey}|${nodeId}`, localExport.name);
+                }
+              } else {
+                fallbackIds.push(nodeId);
+              }
+            }
 
-          setSyncStatus(`Fetching Figma group ${groupIndex}/${totalGroups}: ${nodeIds.length} frame(s)...`);
+            if (fallbackIds.length > 0) {
+              cloudFallbackGroups.set(groupKey, fallbackIds);
+            }
+          }
+        } else {
+          for (const [groupKey, nodeIdSet] of groups) {
+            cloudFallbackGroups.set(groupKey, [...nodeIdSet]);
+          }
+        }
 
-          const batchRes = await fetch('/api/figma/render-batch', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${figmaToken}`,
-            },
-            body: JSON.stringify({ fileKey, nodeIds, format, scale }),
-          });
+        // Cloud fallback for closed Figma files or non-Tauri sessions
+        if (cloudFallbackGroups.size > 0) {
+          if (!figmaToken) {
+            throw new Error('Figma token missing. Please connect Figma to sync frames from closed files.');
+          }
+
+          const totalGroups = cloudFallbackGroups.size;
+          let groupIndex = 0;
+
+          for (const [groupKey, nodeIds] of cloudFallbackGroups) {
+            groupIndex++;
+            const [fileKey, format, scaleStr] = groupKey.split('|');
+            const scale = Number(scaleStr);
+
+            setSyncStatus(`Fetching Figma group ${groupIndex}/${totalGroups}: ${nodeIds.length} frame(s)...`);
+
+            const batchRes = await fetch('/api/figma/render-batch', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${freshFigmaToken}`,
+              },
+              body: JSON.stringify({ fileKey, nodeIds, format, scale }),
+            });
 
           if (!batchRes.ok) {
             const errData = await batchRes.json().catch(() => ({})) as {
@@ -290,11 +355,11 @@ const communityMessage = applyCommunityRateLimit(batchRes, errData);
 if (communityMessage) {
 throw new Error(communityMessage);
 }
-if (batchRes.status === 429) {
-const parts: string[] = ['Rate limited by Figma.'];
+            if (batchRes.status === 429) {
+              const parts: string[] = ['Rate limited by Figma.'];
               if (errData.planTier) parts.push(`Plan: ${errData.planTier}.`);
               if (errData.limitType) parts.push(`Seat tier: ${errData.limitType}.`);
-              if (errData.retryAfter) parts.push(`Retry in ${errData.retryAfter}s.`);
+              if (errData.retryAfter) parts.push(`Retry in ${formatDuration(errData.retryAfter)}.`);
               throw new Error(parts.join(' '));
             }
             throw new Error(errData.error || 'Figma batch render failed');
@@ -306,6 +371,7 @@ const parts: string[] = ['Rate limited by Figma.'];
             if (dataUrl) {
               renderCache.set(`${fileKey}|${nodeId}|${format}|${scale}`, dataUrl);
             }
+          }
           }
         }
       }
@@ -359,8 +425,110 @@ const parts: string[] = ['Rate limited by Figma.'];
       }
 
       // --- STEP 2: Update each board widget using the cached data URLs ---
-      for (let i = 0; i < itemsToSync.length; i++) {
-        const item = itemsToSync[i];
+      let updatedCount = 0;
+      const missingNodes: string[] = [];
+
+      // --- GitHub Docs Text Sync (In-Place via Miro Web SDK v2, 0 REST PATCH calls) ---
+      if (githubTargets.length > 0) {
+        const oauthGhToken = await getValidToken('github');
+        const manualGhPat =
+          typeof window !== 'undefined' ? window.localStorage.getItem('syncingboard_github_pat') || '' : '';
+        const githubPat = oauthGhToken?.trim() || manualGhPat.trim();
+        const docCache = new Map<string, GitHubDocPayload | 'not_modified'>();
+
+        for (const target of githubTargets) {
+          setSyncStatus(`Syncing GitHub doc: ${target.nodeName}...`);
+          const widget = (await miro.board.getById(target.id)) as unknown as {
+            id: string;
+            content?: string;
+            getMetadata?(ns?: string): Promise<unknown>;
+            setMetadata?(ns: string, val: unknown): Promise<void>;
+            sync?(): Promise<void>;
+          } | null;
+          if (!widget) continue;
+
+          const meta = (await widget.getMetadata?.('syncingboard')) as Record<string, unknown> | undefined;
+          const etag = typeof meta?.etag === 'string' ? meta.etag : null;
+          const prevHash = typeof meta?.contentHash === 'string' ? meta.contentHash : '';
+
+          let payload = docCache.get(target.fileKey);
+          if (!payload) {
+            const headers: Record<string, string> = {};
+            if (githubPat.trim()) headers.Authorization = `Bearer ${githubPat.trim()}`;
+            if (etag) headers['If-None-Match'] = etag;
+            const res = await fetch(`/api/github/markdown?url=${encodeURIComponent(target.fileKey)}`, {
+              method: 'GET',
+              headers,
+              cache: 'no-store',
+            });
+            if (res.status === 304) {
+              payload = 'not_modified';
+            } else if (res.ok) {
+              payload = (await res.json()) as GitHubDocPayload;
+            } else {
+              const errJson = (await res.json().catch(() => ({}))) as { error?: string };
+              throw new Error(errJson.error || `GitHub fetch failed (HTTP ${res.status})`);
+            }
+            docCache.set(target.fileKey, payload);
+          }
+
+          if (payload === 'not_modified') {
+            updatedCount += 1;
+            continue;
+          }
+
+          let md: string | null = null;
+          let title = target.nodeName;
+          let hash = payload.fullHash;
+          if (target.nodeId === '*') {
+            md = payload.fullMarkdown;
+            title = payload.path;
+          } else if (
+            payload.lineRange &&
+            target.nodeId === `L${payload.lineRange.start}-L${payload.lineRange.end}` &&
+            payload.lineRangeMarkdown !== null
+          ) {
+            md = payload.lineRangeMarkdown;
+            title = `${payload.path}#${target.nodeId}`;
+            hash = payload.lineRangeHash || payload.fullHash;
+          } else {
+            const sec = payload.sections.find((s) => s.id === target.nodeId);
+            if (sec) {
+              md = sec.markdown;
+              title = sec.title;
+              hash = sec.contentHash;
+            }
+          }
+
+          if (md === null) {
+            const label = `"${target.nodeName}" (#${target.nodeId})`;
+            if (!missingNodes.includes(label)) missingNodes.push(label);
+            continue;
+          }
+
+          if (hash !== prevHash) {
+            widget.content = compileToMiroHtml(md);
+            if (widget.setMetadata) {
+              await widget.setMetadata('syncingboard', {
+                ...(meta || {}),
+                platform: 'github',
+                url: target.fileKey,
+                sectionId: target.nodeId,
+                sectionTitle: title,
+                contentHash: hash,
+                etag: payload.etag,
+              });
+            }
+            if (widget.sync) {
+              await widget.sync();
+            }
+          }
+          updatedCount += 1;
+        }
+      }
+
+      for (let i = 0; i < imageTargets.length; i++) {
+        const item = imageTargets[i];
         // Look up by format-aware cache key (Penpot uses format in key, Figma doesn't)
         const cacheKey = `${item.fileKey}|${item.nodeId}`;
         const cacheFormat = item.format || 'png';
@@ -370,49 +538,64 @@ const parts: string[] = ['Rate limited by Figma.'];
         if (!dataUrl) dataUrl = renderCache.get(`${cacheKey}|${cacheFormat}`);
         if (!dataUrl) dataUrl = renderCache.get(cacheKey); // fallback to legacy key
         if (!dataUrl) {
-          console.warn(`No render cached for ${cacheKey}, skipping.`);
+          console.warn(`No render cached for ${cacheKey}, frame may be deleted or moved.`);
+          const label = item.nodeName && item.nodeName !== item.nodeId ? `"${item.nodeName}" (ID: ${item.nodeId})` : `ID: ${item.nodeId}`;
+          if (!missingNodes.includes(label)) {
+            missingNodes.push(label);
+          }
           continue;
         }
 
-        if (i > 0) await new Promise(resolve => setTimeout(resolve, 500));
+        if (updatedCount > 0) await new Promise(resolve => setTimeout(resolve, 500));
         // Use live name from export response if available, fall back to original
         const liveName = nameCache.get(`${item.fileKey}|${item.nodeId}`) || item.nodeName;
         setSyncStatus(`Updating canvas widget ${i + 1}/${itemsToSync.length}: ${liveName}`);
 
-        const response = await fetch('/api/miro/update-image', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${freshMiroToken}`,
-            ...(figmaToken ? { 'X-Figma-Token': figmaToken } : {}),
-          },
-          body: JSON.stringify({
-            boardId,
-            itemId: item.id,
-            fileKey: item.fileKey,
-            nodeId: item.nodeId,
-            nodeName: liveName,
-            width: item.width,
-            dataUrl,
-            format: item.format || (item.platform === 'penpot' ? 'svg' : 'png'),
-            scale: item.scale || 2,
-            platform: item.platform || 'figma',
-            preserveSize,
-          }),
-        });
+        const miroUpdatePayload = {
+          boardId,
+          itemId: item.id,
+          fileKey: item.fileKey,
+          nodeId: item.nodeId,
+          nodeName: liveName,
+          width: item.width,
+          dataUrl,
+          format: (item.format || (item.platform === 'penpot' ? 'svg' : 'png')) as 'png' | 'svg',
+          scale: item.scale || 2,
+          preserveSize,
+        };
 
-if (!response.ok) {
-const errData = await response.json().catch(() => ({})) as {
-error?: string;
-reset?: number;
-retryAfter?: number | null;
-};
-const communityMessage = applyCommunityRateLimit(response, errData);
-if (communityMessage) {
-throw new Error(communityMessage);
-}
-throw new Error(errData.error || 'Failed to update image on Miro board');
-}
+        // Fast path: when Tauri SyncingBridge is active, PATCH Miro REST API v2 directly from Rust (0 Vercel calls)
+        let response: Response | null = null;
+        if (isTauriMode) {
+          response = await updateMiroImageViaTauri(miroUpdatePayload, freshMiroToken);
+        }
+        if (!response) {
+          response = await fetch('/api/miro/update-image', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${freshMiroToken}`,
+              ...(freshFigmaToken ? { 'X-Figma-Token': freshFigmaToken } : {}),
+            },
+            body: JSON.stringify({
+              ...miroUpdatePayload,
+              platform: item.platform || 'figma',
+            }),
+          });
+        }
+
+        if (!response.ok) {
+          const errData = await response.json().catch(() => ({})) as {
+            error?: string;
+            reset?: number;
+            retryAfter?: number | null;
+          };
+          const communityMessage = applyCommunityRateLimit(response, errData);
+          if (communityMessage) {
+            throw new Error(communityMessage);
+          }
+          throw new Error(errData.error || 'Failed to update image on Miro board');
+        }
 
         // Update widget metadata and title via the Miro SDK.
         // Title is updated via the SDK (not the REST API PATCH) to avoid
@@ -426,16 +609,35 @@ throw new Error(errData.error || 'Failed to update image on Miro board');
             nodeId: item.nodeId,
             format: item.format || (item.platform === 'penpot' ? 'svg' : 'png'),
             scale: item.scale || 2,
-            platform: item.platform || 'figma',
+            platform: item.platform === 'penpot' ? 'penpot' : 'figma',
             title: titleTag,
           });
         } catch (metaErr) {
           console.warn('Failed to update widget metadata/title:', metaErr);
         }
+        updatedCount++;
+      }
+
+      if (missingNodes.length > 0 && updatedCount === 0) {
+        const noun = itemsToSync[0]?.platform === 'penpot' ? 'Penpot file' : 'Figma file';
+        throw new Error(
+          missingNodes.length === 1
+            ? `Frame ${missingNodes[0]} was not found in the ${noun} (it may have been deleted or moved to a new page with a new ID).`
+            : `${missingNodes.length} frames not found in the ${noun}: ${missingNodes.join(', ')}.`
+        );
       }
 
       const label = syncAllCopies ? 'all copies' : 'selected widget(s)';
-      setSyncStatus(`✓ Updated ${itemsToSync.length} ${label} successfully!`);
+      if (missingNodes.length > 0) {
+        const noun = itemsToSync[0]?.platform === 'penpot' ? 'Penpot' : 'Figma';
+        setSyncStatus(
+          `Updated ${updatedCount} of ${itemsToSync.length} ${label}. Missing in ${noun}: ${missingNodes.join(', ')}.`,
+          'info'
+        );
+      } else {
+        setSyncStatus(`✓ Updated ${updatedCount} ${label} successfully!`);
+      }
+      void broadcastSyncActivity(pairingId, `Sync completed: updated ${updatedCount} screen(s) on Miro board.`);
 
       try {
         const syncChannel = new BroadcastChannel('figma_miro_sync');

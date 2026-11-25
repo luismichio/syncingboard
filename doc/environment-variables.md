@@ -35,6 +35,18 @@ This document provides a comprehensive reference of all environment variables su
 
 ---
 
+## Source Adapter: GitHub Docs-as-Code Credentials (Optional)
+
+Public GitHub Markdown files work without credentials. Configure these only to enable one-click **Connect GitHub** OAuth for private repositories.
+
+| Variable | Type | Required | Default | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| `GITHUB_CLIENT_ID` | String | **Private Repos Only** | None | Client ID from your GitHub App (recommended, read-only `Contents: Read`) or GitHub OAuth App. |
+| `GITHUB_CLIENT_SECRET` | String | **Private Repos Only** | None | Client Secret from your GitHub App or OAuth App. Keep server-side only. |
+| `GITHUB_OAUTH_SCOPE` | String | **Optional** | `repo` | Leave empty (`GITHUB_OAUTH_SCOPE=`) for fine-grained **GitHub Apps** (`Contents: Read-only`); omit or set `repo` for classic OAuth Apps. |
+
+---
+
 ## Cloud Infrastructure Services
 
 | Variable | Type | Required | Default | Description |
@@ -54,6 +66,8 @@ SyncingBoard includes an optional 3-layer protection engine. Redis-backed rate l
 | `RATE_LIMIT_ENABLED` | Boolean | `true` | Set to `false` to disable rate limiting entirely. |
 | `RATE_LIMIT_COMMUNITY_FIGMA_PER_MIN` | Number | `5` | Figma node-info and render requests allowed per minute per user OAuth token hash. |
 | `RATE_LIMIT_COMMUNITY_FIGMA_PER_DAY` | Number | `50` | Figma render requests allowed per day per user OAuth token hash. |
+| `RATE_LIMIT_COMMUNITY_GITHUB_PER_MIN` | Number | `30` | GitHub Markdown & branch-list requests allowed per minute per token hash (or IP when unauthenticated). |
+| `RATE_LIMIT_COMMUNITY_GITHUB_PER_DAY` | Number | `500` | GitHub Markdown & branch-list requests allowed per day per token hash (or IP when unauthenticated). |
 | `RATE_LIMIT_COMMUNITY_RELAY_PER_MIN` | Number | `8` | Penpot relay render requests allowed per minute per pairing ID. |
 | `RATE_LIMIT_COMMUNITY_RELAY_PER_HOUR` | Number | `60` | Penpot relay render requests allowed per hour per pairing ID. |
 | `RATE_LIMIT_COMMUNITY_RELAY_PER_DAY` | Number | `200` | Penpot relay render requests allowed per day per pairing ID. |
@@ -94,6 +108,14 @@ MIRO_CLIENT_SECRET=your_miro_client_secret
 # ==========================================
 FIGMA_CLIENT_ID=your_figma_client_id
 FIGMA_CLIENT_SECRET=your_figma_client_secret
+
+# ==========================================
+# Source Adapter: GitHub OAuth Credentials (Optional — Private Docs)
+# ==========================================
+GITHUB_CLIENT_ID=your_github_client_id
+GITHUB_CLIENT_SECRET=your_github_client_secret
+# Leave empty for GitHub Apps (Contents: Read-only); defaults to "repo" for classic OAuth Apps
+# GITHUB_OAUTH_SCOPE=
 
 # ==========================================
 # Cloud Relay & Storage Services

@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useAuthTokens } from './useAuthTokens';
 import { useMiroSelection } from './useMiroSelection';
 import { useFigmaImporter } from './useFigmaImporter';
 import { usePenpotImporter } from './usePenpotImporter';
+import { useGitHubDocsImporter } from './useGitHubDocsImporter';
 import { useMiroSync } from './useMiroSync';
 import { getValidToken } from '@/lib/tokens';
 import { trackEvent } from '@/lib/analytics';
@@ -53,19 +54,57 @@ export function useMiroPlugin(propagate: boolean = false, preserveSize: boolean 
   const {
     figmaToken,
     miroToken,
+    githubToken,
     connectFigma,
     connectMiro,
+    connectGithub,
     disconnectFigma,
     disconnectMiro,
+    disconnectGithub,
     tokensLoading,
   } = useAuthTokens(isInitMode);
 
   // 2. Selection Hook
   const {
-    selectedItems,
-    setSelectedItems,
+    selectedItems: rawSelectedItems,
+    setSelectedItems: setRawSelectedItems,
     isAnyImageSelected,
   } = useMiroSelection(isInitMode);
+
+  const selectionKey = useMemo(
+    () => rawSelectedItems.map((i) => i.id).sort().join(','),
+    [rawSelectedItems]
+  );
+  const [prevSelectionKey, setPrevSelectionKey] = useState(selectionKey);
+  const [deselectedIds, setDeselectedIds] = useState<string[]>([]);
+
+  if (prevSelectionKey !== selectionKey) {
+    setPrevSelectionKey(selectionKey);
+    setDeselectedIds([]);
+  }
+
+  const selectedItems = useMemo(
+    () => rawSelectedItems.filter((item) => !deselectedIds.includes(item.id)),
+    [rawSelectedItems, deselectedIds]
+  );
+
+  const handleDeselectGroup = (_groupKey: string, itemIds: string[]) => {
+    setDeselectedIds((prev) => Array.from(new Set([...prev, ...itemIds])));
+    const board = typeof window !== 'undefined' ? window.miro?.board : undefined;
+    if (board && typeof board.deselect === 'function' && itemIds.length > 0) {
+      try {
+        Promise.all(itemIds.map((id) => board.deselect({ id }))).catch((e) => {
+          console.warn('[MiroSelection] Failed to deselect widgets from canvas:', e);
+        });
+      } catch (e) {
+        console.warn('[MiroSelection] Failed to deselect widgets from canvas:', e);
+      }
+    }
+  };
+
+  const handleClearDeselected = () => {
+    setDeselectedIds([]);
+  };
 
   // 3. Figma Importer Hook
   const {
@@ -74,6 +113,7 @@ export function useMiroPlugin(propagate: boolean = false, preserveSize: boolean 
     isDetectingLocal,
     parseFigmaLink,
     detectLocalFigmaSelection,
+    applyLiveFigmaSelection,
     importFigmaScreen,
   } = useFigmaImporter(figmaToken, miroToken, setIsSyncing, updateSyncStatus);
 
@@ -84,6 +124,9 @@ export function useMiroPlugin(propagate: boolean = false, preserveSize: boolean 
     detectLocalPenpotSelection,
     importPenpotScreen,
   } = usePenpotImporter(miroToken, setIsSyncing, updateSyncStatus);
+
+  // 4b. GitHub Docs-as-Code Importer Hook
+  const githubDocs = useGitHubDocsImporter(updateSyncStatus, githubToken);
 
   // 5. Board Sync Hook
   const {
@@ -159,7 +202,7 @@ export function useMiroPlugin(propagate: boolean = false, preserveSize: boolean 
 
       // Now sync each adopted widget with the new image content
       const boardInfo = await miro.board.getInfo();
-      const freshMiroToken = miroToken || await getValidToken('miro');
+      const freshMiroToken = (await getValidToken('miro')) || miroToken;
 
       if (!freshMiroToken) {
         updateSyncStatus('Miro token unavailable. Please reconnect Miro.', 'error');
@@ -171,7 +214,8 @@ export function useMiroPlugin(propagate: boolean = false, preserveSize: boolean 
       let dataUrl: string | null = null;
 
       if (platform === 'figma') {
-        if (!figmaToken) {
+        const freshFigmaToken = (await getValidToken('figma')) || figmaToken;
+        if (!freshFigmaToken) {
           throw new Error('Figma token missing. Please connect Figma in Settings.');
         }
 
@@ -180,7 +224,7 @@ export function useMiroPlugin(propagate: boolean = false, preserveSize: boolean 
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${figmaToken}`,
+            'Authorization': `Bearer ${freshFigmaToken}`,
           },
           body: JSON.stringify({ fileKey, nodeIds: [nodeId], format, scale }),
         });
@@ -273,9 +317,14 @@ export function useMiroPlugin(propagate: boolean = false, preserveSize: boolean 
     isInitMode,
     figmaToken,
     miroToken,
+    githubToken,
     tokensLoading,
     selectedItems,
-    setSelectedItems,
+    rawSelectedItems,
+    deselectedIds,
+    handleDeselectGroup,
+    handleClearDeselected,
+    setSelectedItems: setRawSelectedItems,
     isSyncing,
     syncStatus,
     figmaInput,
@@ -283,10 +332,13 @@ export function useMiroPlugin(propagate: boolean = false, preserveSize: boolean 
     isDetectingLocal,
     connectFigma,
     connectMiro,
+    connectGithub,
     disconnectFigma,
     disconnectMiro,
+    disconnectGithub,
     parseFigmaLink,
     detectLocalFigmaSelection,
+    applyLiveFigmaSelection,
     importFigmaScreen,
     // Penpot importer
     penpotNodeInfo,
@@ -302,5 +354,7 @@ export function useMiroPlugin(propagate: boolean = false, preserveSize: boolean 
     isAnyImageSelected,
     // Replace / Adopt
     replaceSelectedWidget,
+    // GitHub Docs-as-Code
+    githubDocs,
   };
 }

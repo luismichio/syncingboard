@@ -47,6 +47,9 @@ The FigJam app is a destination, not a source: "Detect Selection in Figma" pulls
 
 ---
 
-## Why Not Tauri for Transport?
+## Hybrid Dual-Transport (Local Tauri vs. Cloud Ably)
 
-Chrome Private Network Access (PNA) blocks all browser -> localhost calls from public origins. Even with valid SSL certificates and correct CORS/PNA headers, both `fetch()` and `WebSocket` targeting loopback addresses are denied by modern Chromium browsers inside iframe contexts. Tauri remains valuable as an optional **capability extender** (see Appendix B), not as a transport bridge.
+SyncingBoard routes traffic per platform so desktop and web tools coexist without compromise:
+
+* **Figma Desktop ↔ Miro Desktop (`SyncingBridge` Local):** When the optional Tauri desktop app is running, Figma Companion connects directly to `ws://localhost:4401/ws` (using `"http://localhost:4401"` in `devAllowedDomains`) and Miro subscribes via same-origin SSE (`GET /api/bridge/stream`) with direct WS fallback. Live selection auto-detect, local Figma `node.exportAsync()`, direct 50 MB Miro `PATCH` uploads, and OS-wide global shortcuts (`Ctrl/Cmd+Shift+I/R/S`) all run with **0 Ably** and **0 Upstash** usage.
+* **Penpot Web & Non-Tauri Browsers (Ably Cloud Relay):** Modern Chromium browsers enforce **Local Network Access (LNA)** inside cross-origin plugin iframes without `allow="loopback-network"`, blocking both `fetch()` and `WebSocket` to loopback regardless of CORS/PNA headers (see [Appendix A](./archive/chromium-loopback.md)). Penpot Web and non-Tauri users automatically stay on **Ably Cloud Relay**, even while Figma Desktop runs locally via `SyncingBridge` in the same session.

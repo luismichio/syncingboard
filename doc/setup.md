@@ -131,6 +131,25 @@ If the Penpot Companion plugin shows "offline" in the Miro plugin:
 
 ---
 
+## Source Adapter: GitHub Docs-as-Code (Optional — Private Repos)
+
+Public GitHub Markdown files work out of the box with zero configuration. To let users sync **private** GitHub repositories via one-click **Connect GitHub** in Settings, create a GitHub App (recommended) or OAuth App:
+
+### Register GitHub App (Recommended — Read-Only)
+1. Go to **GitHub → Settings → Developer settings → GitHub Apps → New GitHub App**.
+2. Set **Callback URL** (under *Identifying and authorizing users*) to:
+   ```
+   https://your-domain.vercel.app/api/oauth/github/callback
+   ```
+   *(You can also add `http://localhost:3000/api/oauth/github/callback` for local development.)*
+3. Uncheck **Webhook → Active**.
+4. Under **Repository permissions**, set **Contents** to **Read-only**.
+5. Select **Any account** under *Where can this GitHub App be installed?* and click **Create GitHub App**.
+6. Copy the **Client ID** (`GITHUB_CLIENT_ID`) and click **Generate a new client secret** (`GITHUB_CLIENT_SECRET`).
+7. Set `GITHUB_OAUTH_SCOPE=` (empty) so GitHub uses the fine-grained read-only permission. *(If you use a classic GitHub OAuth App instead, omit `GITHUB_OAUTH_SCOPE` so it defaults to `repo`.)*
+
+---
+
 ## Common Cloud Services: Upstash & Ably (Self-Hosters Only)
 
 These cloud accounts are required to run the real-time relays and enforce persistent rate limits. Setup these accounts before deploying to Vercel:
@@ -185,6 +204,9 @@ Vercel is the simplest deployment path --- one-click deploy with zero server man
    | `MIRO_CLIENT_SECRET` | **Both** | From Miro Developer App |
    | `FIGMA_CLIENT_ID` | **Figma only** | From Figma Developer App |
    | `FIGMA_CLIENT_SECRET` | **Figma only** | From Figma Developer App |
+   | `GITHUB_CLIENT_ID` | **GitHub private repos (optional)** | From GitHub App / OAuth App |
+   | `GITHUB_CLIENT_SECRET` | **GitHub private repos (optional)** | From GitHub App / OAuth App |
+   | `GITHUB_OAUTH_SCOPE` | **GitHub private repos (optional)** | Leave blank for GitHub App (`Contents: Read-only`); defaults to `repo` for OAuth Apps |
    | `UPSTASH_REDIS_REST_URL` | **Penpot only** | From Upstash Console (used for Penpot image relay) |
    | `UPSTASH_REDIS_REST_TOKEN` | **Penpot only** | From Upstash Console (used for Penpot image relay) |
    | `ABLY_API_KEY` | **Figma (selection relay) & Penpot** | From Ably Console (WebSocket broker) |
@@ -404,12 +426,28 @@ yarn build    # Validate production build compilation
 
 ---
 
-## Tauri Desktop App (SyncBridge) (Optional)
+## Tauri Desktop App (SyncingBridge) (Optional)
+
+> [!TIP]
+> **Optional Zero-Cloud Local Engine:** **SyncingBridge** is a lightweight Rust/Tauri v2 desktop app that runs a local loopback WebSocket & HTTP broker on `127.0.0.1:4401` (no SSL certificates or `mkcert` required). Day-to-day cloud sync works out of the box without installing SyncingBridge; running it unlocks **0 Ably / 0 Upstash / 0 Vercel / 0 Figma REST API** sync for Figma Desktop ↔ Miro Desktop, up to **50 Figma frames per batch**, **50 MB** image uploads, **live Figma auto-detect**, and **configurable OS-wide global shortcuts**.
+
+### Current Distribution & OS Security Notes
 
 > [!NOTE]
-> **Planned / Experimental Feature:** The Tauri desktop app (SyncBridge) is **optional and currently in design / planned development (not fully implemented in the v0.13.4 release)**. It is intended for future capabilities such as large image streaming (>4.5MB), Adobe UXP integration, local LLMs, and two-way sync. Day-to-day cloud-native Figma and Penpot sync works 100% out of the box without installing SyncBridge.
+> **Pre-built binaries are not yet published on GitHub Releases.** Until the first public release is cut, run SyncingBridge from source (`yarn tauri:dev`) or compile a local installer (`cd tauri-bridge && yarn tauri build`) using the steps below.
 
-### Prerequisites and Build
+Once GitHub Release binaries are published, note that **installers are currently unsigned** (no Apple Developer ID notarization or Windows Authenticode certificate is configured yet):
+
+- **Linux (`.AppImage` / `.deb`):** Runs cleanly with no OS trust warnings.
+- **Windows (`.exe` / `.msi`):** Triggers a **Microsoft Defender SmartScreen** warning (*"Windows protected your PC"*). Click **More info → Run anyway** to install. Note that strict corporate IT policies may block unsigned installers.
+- **macOS (`.dmg` / `.app`):** Blocked by **Gatekeeper** on first launch (*"Apple could not verify…"* or *"is damaged"*). Open **System Settings → Privacy & Security → Open Anyway**, or clear the quarantine attribute in Terminal:
+  ```bash
+  xattr -cr /Applications/SyncingBridge.app
+  ```
+  Additionally, the GitHub Actions macOS runner (`macos-latest`) currently builds **Apple Silicon (`arm64`) only**; Intel Macs must build from source until a universal binary target is added.
+- **Updates:** Auto-update (`tauri-plugin-updater`) is not yet enabled — download the latest release or rebuild manually to upgrade.
+
+### Prerequisites and Local Run
 
 1. **Install Prerequisites:**
    - **Node.js & Yarn** (already installed)
@@ -422,81 +460,23 @@ yarn build    # Validate production build compilation
        sudo apt install libwebkit2gtk-4.1-dev build-essential libssl-dev libxdo-dev libayatana-appindicator3-dev librsvg2-dev
        ```
 
-2. **Build and Run:**
+2. **Run Locally (with Next.js + Tunnel + Tauri in one command):**
    ```bash
-   cd tauri-bridge
-   yarn install
-   yarn tauri dev
+   yarn local:tauri
+   ```
+   Or launch **SyncingBridge** standalone:
+   ```bash
+   yarn tauri:dev
    ```
 
-### Local SSL Certificate (mkcert)
+3. **Build Native Installers (Windows / macOS / Linux):**
+   - Locally: `cd tauri-bridge && yarn tauri build`
+   - Via GitHub Actions: push a `v*` tag (or trigger **Release Tauri Bridge** manually from the GitHub Actions tab) to compile native `.msi`/`.exe`, `.dmg`, and `.AppImage`/`.deb` installers automatically.
 
-Miro runs on `https://miro.com`. The **SyncBridge desktop app** (Tauri/Electron) serves an HTTPS endpoint on localhost that requires a trusted certificate. SyncBridge uses `mkcert` --- a zero-config tool that creates certificates trusted by your system.
-
-> **Chrome web vs Electron:** These certificates are needed for **Miro Desktop (Electron)**, which can connect to localhost. Chrome web has stricter **Private Network Access (PNA)** rules that block browser->localhost connections from public origins regardless of SSL --- this is why the cloud-relay architecture is the default for Penpot. SyncBridge is only needed for capability extension (large images, Adobe UXP, local LLMs), not for day-to-day sync.
-
-> **Important:** The `cert.pem` and `key.pem` files are machine-specific and excluded from git via `.gitignore`. Every developer generates their own.
-
-**Step 1 --- Install `mkcert`:**
-- **Windows:** `winget install FiloSottile.mkcert`
-- **macOS:** `brew install mkcert`
-- **Linux:**
-  ```bash
-  sudo apt install libnss3-tools
-  wget -O mkcert https://github.com/FiloSottile/mkcert/releases/latest/download/mkcert-v1.4.4-linux-amd64
-  chmod +x mkcert
-  sudo mv mkcert /usr/local/bin/
-  ```
-
-**Step 2 --- Install the Local CA (one-time per machine):**
-```bash
-mkcert -install
-```
-
-**Step 3 --- Generate the Certificate:**
-```bash
-cd tauri-bridge/src-tauri/resources
-mkcert \
-  -cert-file cert.pem \
-  -key-file key.pem \
-  local.syncingboard.com \
-  127.0.0.1 \
-  localhost
-```
-
-**Windows (PowerShell):**
-```powershell
-cd tauri-bridge\src-tauri\resources
-mkcert -cert-file cert.pem -key-file key.pem local.syncingboard.com 127.0.0.1 localhost
-```
-
-**Step 4 --- Rebuild:**
-```bash
-cd tauri-bridge
-yarn tauri build    # production
-# or
-yarn tauri dev      # development
-```
-
-> Do not commit `cert.pem` or `key.pem` --- they are already in `.gitignore`.
-
-### DNS Loopback Record
-
-SyncingBoard uses a public DNS A record pointing to `127.0.0.1` so that `local.syncingboard.com` resolves to your local machine with valid TLS.
-
-- **Domain:** `local.syncingboard.com`
-- **Type:** `A`
-- **Value:** `127.0.0.1`
-
-If you fork this project with your own domain:
-1. Add an A record (`local-syncingboard` -> `127.0.0.1`) with your DNS provider.
-   > Squarespace DNS does not accept dots in the Host field. Use a dash (`-`) as a separator.
-2. Update all occurrences of `local.syncingboard.com` in:
-   - `public/penpot-companion-ui.html`
-   - `src/app/miro-plugin/companionRelayClient.ts`
-   - `tauri-bridge/index.html`
-   - `tauri-bridge/src-tauri/src/lib.rs` (comment only)
-3. Regenerate your `cert.pem` / `key.pem` for the new domain.
+### Transport Behavior & Settings
+* **Hybrid Dual-Transport:** When `SyncingBridge (Local)` is enabled in Miro Settings, **Figma Desktop** routes 100% locally (`ws://localhost:4401` + `node.exportAsync()` + Rust Miro `PATCH`), while **Penpot Web** automatically routes over **Ably Cloud Relay** (due to Chrome Local Network Access iframe rules) so both coexist seamlessly.
+* **Configurable Broker Port:** Default `4401` (adjustable in **SyncingBridge → Settings** and Miro/Companion Settings).
+* **Configurable Global Shortcuts:** Default `Ctrl+Shift+I` / `Cmd+Shift+I` (Import), `Ctrl+Shift+R` / `Cmd+Shift+R` (Replace), `Ctrl+Shift+S` / `Cmd+Shift+S` (Sync) — click any shortcut box in **SyncingBridge → Settings** to record a custom combo within a 4-second window (or press `Backspace` to disable).
 
 **Troubleshooting --- DNS Rebinding Protection:**
 
@@ -527,12 +507,13 @@ SyncingBoard includes a GitHub Actions pipeline that compiles installer packages
    git push origin v0.1.0
    ```
 4. GitHub Actions builds:
-   - **Windows:** `.msi` and `.exe` installers
-   - **macOS:** `.dmg` and `.app` bundles
+   - **Windows:** `.msi` and `.exe` installers (unsigned)
+   - **macOS:** `.dmg` and `.app` bundles (Apple Silicon `arm64`, unsigned/unnotarized)
    - **Linux:** `.deb` and `.AppImage` packages
 5. Assets are uploaded to a new **Draft Release** --- verify and publish.
 
-> For CI/CD releases, `cert.pem` and `key.pem` must be stored as **GitHub Actions Secrets** and written during the build step. See `.github/workflows/` for the existing pipeline.
+> [!NOTE]
+> Local TLS certificates (`cert.pem` / `key.pem`) are no longer required — SyncingBridge binds directly to loopback `127.0.0.1:4401`. Code signing and Apple notarization secrets are not yet configured in `.github/workflows/release-tauri.yml`.
 
 ---
 

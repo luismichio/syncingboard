@@ -5,7 +5,7 @@ description: Miro SDK v2 image widget integration, stateless metadata title sign
 
 # Target Adapters & Metadata Architecture
 
-> **Overview:** SyncingBoard writes synchronized design data to whiteboard platforms through target adapters. **Miro** is the primary target; a **FigJam app** (M1) is shipped; **Mural**, **Microsoft Whiteboard**, **Excalidraw**, and **tldraw** are under research/design.
+> **Overview:** SyncingBoard writes synchronized design data and Docs-as-Code Markdown to whiteboard and design platforms through target adapters. **Miro** is the primary target; **FigJam** (images + GitHub Docs) and **Penpot** (GitHub Docs target, alongside its Source role) are shipped; **Mural**, **Microsoft Whiteboard**, **Excalidraw**, and **tldraw** are under research/design.
 
 ---
 
@@ -21,6 +21,7 @@ Miro is SyncingBoard's primary canvas target. SyncingBoard pushes screenshots to
 * **Sidebar UI:** Miro Web SDK `miro.board.ui.openPanel()` for the SyncingBoard control panel.
 * **Geometry Preservation (`preserveSize`):** Optional update mode (`preserveSize: true`) that pushes new image bytes to Miro without resetting custom canvas widget dimensions or aspect ratios.
 * **Widget Adoption & Retargeting (`replaceSelectedWidget`):** Enables adopting non-SyncingBoard images or retargeting existing SyncingBoard widgets to a new Figma/Penpot frame without changing widget IDs. Connectors, comments, links, and frame memberships are preserved.
+* **Docs-as-Code Text Widgets (GitHub):** Places and updates GitHub Markdown sections in place on Miro `text`, `shape`, and `sticky_note` widgets via Miro Web SDK v2 using `compileToMiroHtml()`, with inline **Branch** and **Section** switchers in the Sync tab.
 
 ---
 
@@ -36,6 +37,21 @@ FigJam (Figma’s whiteboard) is SyncingBoard’s second whiteboard target. The 
 * **PNG-only:** FigJam rejects SVG image pixels, so SVG renders are rasterized to PNG in-browser before placement; the FigJam surface offers PNG format only.
 * **Propagate:** "Propagate scale to all copies" (Miro keeps "Propagate format & scale to all copies").
 * **Never a source:** "Detect Selection" reads the Figma/Penpot companion relay, not FigJam nodes.
+* **Docs-as-Code Text Widgets (GitHub):** Places and updates Markdown sections in place on FigJam `Text`, `Sticky`, and `ShapeWithText` nodes via `figjam-place-doc` / `figjam-update-doc` (`figma.getNodeByIdAsync`, font preloading, `compileToCharacterRanges()`), with inline **Branch** and **Section** switchers in the Sync tab.
+
+---
+
+## Penpot — Docs-as-Code Target (Dual-Role)
+
+> **Status:** shipped in 0.18.0.
+
+While Penpot acts as a **Source** for design screens in the Companion **`SYNC`** tab, it also acts as a **Target** for GitHub Docs-as-Code Markdown inside the Penpot Companion **`DOCS`** tab:
+
+* **Write Permission (`content:write`):** Declared in `public/penpot-manifest.json` so `public/penpot-companion-plugin.js` can create and mutate `Text` shapes on the active canvas.
+* **In-Place Text & Dimension Preservation:** `create-git-text` places new Markdown sections in `auto-height` mode at `480px` width; `update-git-text` updates existing `Text` shapes in place (preserving shape ID, `width`, `height`, `growType`, fills, and Flex/Grid layout constraints).
+* **Penpot `2.19.x` Range Typography:** Uses a 3-step `TextShape.getRange(start, end)` sequence (headings first with `fontSize` before `fontWeight`, non-heading gaps clamped to `14/400` to prevent sibling-paragraph bleed, then inline bold/italic/JetBrains Mono code spans).
+* **Page-Wide & Selection Sync:** Supports **Sync Selected** (with **OPEN/COPY** GitHub deep links and inline **Branch** & **Section** switchers) plus **Sync All Bound Docs** via `page.findShapes({ type: 'text' })` (`scan-git-shapes`).
+* **Plugin Metadata:** Stored per shape via `shape.setPluginData('syncboard-git', ...)` containing `{ githubUrl, githubBranch, sectionId, sectionHeading, contentHash, etag }`.
 
 ---
 
@@ -55,8 +71,13 @@ SyncingBoard stores all design connection metadata directly in the Miro widget. 
   "nodeName": "Home Screen",
   "format": "png" | "svg",
   "scale": 1 | 2 | 3 | 4,   // Community plan: 1x/2x (MAX_SCALE=2). Self-host: 1x–4x (MAX_SCALE=4).
-  "platform": "figma" | "penpot",
-  "width": 1200             // Stored natural width for Penpot vector scaling
+  "platform": "figma" | "penpot" | "github",
+  "url": "https://github.com/org/repo/blob/main/README.md", // Present when platform === "github"
+  "branch": "main",
+  "sectionId": "getting-started",
+  "etag": "W/\"abc123\"",
+  "width": 1200,            // Stored natural width for Penpot vector scaling
+  "lastSyncedAt": 1723826700000 // Millisecond timestamp for freshness auditing & AI agent get_status tool
 }
 ```
 

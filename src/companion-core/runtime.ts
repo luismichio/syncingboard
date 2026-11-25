@@ -70,9 +70,15 @@ export function initCompanionRuntime(options: CompanionRuntimeOptions): void {
 
   // DOM Elements - Navigation
   const tabBtnSync = document.getElementById('tab-btn-sync') as HTMLButtonElement | null;
+  const tabBtnDocs = document.getElementById('tab-btn-docs') as HTMLButtonElement | null;
   const tabBtnSettings = document.getElementById('tab-btn-settings') as HTMLButtonElement | null;
   const viewSync = document.getElementById('view-sync') as HTMLElement | null;
+  const viewDocs = document.getElementById('view-docs') as HTMLElement | null;
   const viewSettings = document.getElementById('view-settings') as HTMLElement | null;
+
+  if (platform === 'penpot' && tabBtnDocs) {
+    tabBtnDocs.style.display = '';
+  }
 
   // DOM Elements - Controls & Status
   const pairingInput = document.getElementById('pairing-id') as HTMLInputElement | null;
@@ -80,8 +86,17 @@ export function initCompanionRuntime(options: CompanionRuntimeOptions): void {
   const togglePairingVisBtn = document.getElementById('toggle-pairing-vis') as HTMLButtonElement | null;
   const statusText = document.getElementById('status-text') as HTMLElement | null;
   const statusDot = document.getElementById('status-dot') as HTMLElement | null;
+  const relayTitle = document.getElementById('relay-title') as HTMLElement | null;
+  const relayDesc = document.getElementById('relay-desc') as HTMLElement | null;
   const pluginText = document.getElementById('plugin-text') as HTMLElement | null;
   const pluginDot = document.getElementById('plugin-dot') as HTMLElement | null;
+  const bridgeText = document.getElementById('bridge-text') as HTMLElement | null;
+  const bridgeDot = document.getElementById('bridge-dot') as HTMLElement | null;
+  const bridgeAutoConnectToggle = document.getElementById('toggle-bridge-auto-connect') as HTMLInputElement | null;
+  const bridgeDesc = document.getElementById('bridge-desc') as HTMLElement | null;
+  const headerTransport = document.getElementById('header-transport-indicator') as HTMLElement | null;
+  const transportIconLocal = document.getElementById('transport-icon-local') as HTMLElement | null;
+  const transportIconCloud = document.getElementById('transport-icon-cloud') as HTMLElement | null;
   const logBox = document.getElementById('log') as HTMLElement | null;
   const linkCard = document.getElementById('link-card') as HTMLElement | null;
   const fileUrlInput = document.getElementById('file-url-input') as HTMLInputElement | null;
@@ -104,6 +119,10 @@ export function initCompanionRuntime(options: CompanionRuntimeOptions): void {
   // Runtime State
   let ablyClient: AblyClientLike | null = null;
   let ablyChannel: AblyChannelLike | null = null;
+  let localBridgeWs: WebSocket | null = null;
+  let activeTransport: 'none' | 'local' | 'cloud' = 'none';
+  let connectGeneration = 0;
+  let isConnectingBridge = false;
   let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
   let currentPairingId = '';
   let isConflictState = false;
@@ -123,21 +142,17 @@ export function initCompanionRuntime(options: CompanionRuntimeOptions): void {
   });
 
   // Tab Navigation Handling
-  function switchTab(tab: 'sync' | 'settings'): void {
-    if (tab === 'sync') {
-      tabBtnSync?.classList.add('active');
-      tabBtnSettings?.classList.remove('active');
-      viewSync?.classList.add('active');
-      viewSettings?.classList.remove('active');
-    } else {
-      tabBtnSync?.classList.remove('active');
-      tabBtnSettings?.classList.add('active');
-      viewSync?.classList.remove('active');
-      viewSettings?.classList.add('active');
-    }
+  function switchTab(tab: 'sync' | 'docs' | 'settings'): void {
+    tabBtnSync?.classList.toggle('active', tab === 'sync');
+    tabBtnDocs?.classList.toggle('active', tab === 'docs');
+    tabBtnSettings?.classList.toggle('active', tab === 'settings');
+    viewSync?.classList.toggle('active', tab === 'sync');
+    viewDocs?.classList.toggle('active', tab === 'docs');
+    viewSettings?.classList.toggle('active', tab === 'settings');
   }
 
   tabBtnSync?.addEventListener('click', () => switchTab('sync'));
+  tabBtnDocs?.addEventListener('click', () => switchTab('docs'));
   tabBtnSettings?.addEventListener('click', () => switchTab('settings'));
 
   function log(message: string): void {
@@ -147,6 +162,25 @@ export function initCompanionRuntime(options: CompanionRuntimeOptions): void {
   }
 
   function updateStatusUI(status: 'connected' | 'connecting' | 'disconnected', text?: string): void {
+    const port = getBridgePort();
+    if (relayTitle && relayDesc) {
+      if (status === 'connected') {
+        if (activeTransport === 'local') {
+          relayTitle.textContent = 'SyncingBridge (Local)';
+          relayDesc.textContent = `Zero-cloud local WebSocket on localhost:${port}`;
+        } else {
+          relayTitle.textContent = 'Cloud Relay (Ably)';
+          relayDesc.textContent = 'WebSocket channel for Miro sync';
+        }
+      } else if (status === 'connecting') {
+        relayTitle.textContent = 'Connecting...';
+        relayDesc.textContent = 'Establishing WebSocket connection';
+      } else {
+        relayTitle.textContent = 'Relay Connection';
+        relayDesc.textContent = 'Connect via Pairing ID in Settings';
+      }
+    }
+
     if (statusText) {
       statusText.className = 'status-state-text';
       if (status === 'connected') {
@@ -177,6 +211,38 @@ export function initCompanionRuntime(options: CompanionRuntimeOptions): void {
       } else {
         connectBtn.className = 'btn-target-connect';
         connectBtn.textContent = 'CONNECT';
+      }
+    }
+
+    if (bridgeDot) {
+      if (activeTransport === 'local') {
+        bridgeDot.className = 'status-dot connected';
+      } else {
+        bridgeDot.className = 'status-dot disconnected';
+      }
+    }
+
+    if (headerTransport && transportIconLocal && transportIconCloud) {
+      if (status === 'connected' && activeTransport === 'local') {
+        headerTransport.className = 'header-transport local';
+        headerTransport.title = `Relay: SyncingBridge Local WebSocket active (localhost:${port})`;
+        transportIconLocal.style.display = 'block';
+        transportIconCloud.style.display = 'none';
+      } else if (status === 'connected' && activeTransport === 'cloud') {
+        headerTransport.className = 'header-transport cloud';
+        headerTransport.title = 'Relay: Cloud Relay (Ably) active';
+        transportIconLocal.style.display = 'none';
+        transportIconCloud.style.display = 'block';
+      } else if (status === 'connecting') {
+        headerTransport.className = 'header-transport connecting';
+        headerTransport.title = 'Relay: Connecting...';
+        transportIconLocal.style.display = 'none';
+        transportIconCloud.style.display = 'block';
+      } else {
+        headerTransport.className = 'header-transport disconnected';
+        headerTransport.title = 'Relay: Disconnected';
+        transportIconLocal.style.display = 'none';
+        transportIconCloud.style.display = 'block';
       }
     }
   }
@@ -270,6 +336,85 @@ export function initCompanionRuntime(options: CompanionRuntimeOptions): void {
     }
   }
 
+  function getBridgePort(): string {
+    try {
+      return localStorage.getItem('syncingboard_bridge_port') || '4401';
+    } catch {
+      return '4401';
+    }
+  }
+
+  const supportsLocalBridge = platform !== 'penpot';
+
+  let bridgeDetectedState = false;
+  async function checkLocalBridge(): Promise<void> {
+    if (!supportsLocalBridge) return;
+    const port = getBridgePort();
+    try {
+      const res = await fetch(`http://localhost:${port}/health`, {
+        method: 'GET',
+        signal: AbortSignal.timeout(1500),
+      });
+      if (res.ok) {
+        if (!bridgeDetectedState) {
+          bridgeDetectedState = true;
+          log(`SyncingBridge detected on localhost:${port}.`);
+        }
+        if (bridgeDot) {
+          bridgeDot.className = 'status-dot';
+          bridgeDot.classList.add('connected');
+        }
+        if (bridgeText) {
+          bridgeText.className = 'status-state-text';
+          bridgeText.classList.add('connected');
+          bridgeText.textContent = `ACTIVE (${port})`;
+        }
+
+        // Auto-reconnect / auto-upgrade back to local SyncingBridge when it comes online
+        let autoConnect = false;
+        try {
+          autoConnect = localStorage.getItem('syncingboard_bridge_auto_connect') === 'true';
+        } catch {
+          // sandbox block
+        }
+        const effectivePairingId = currentPairingId || pairingInput?.value?.trim() || '';
+        if (
+          autoConnect &&
+          !isConnectingBridge &&
+          effectivePairingId &&
+          isValidPairingId(effectivePairingId) &&
+          activeTransport !== 'local' &&
+          stateMachine.getState() !== 'connecting'
+        ) {
+          log(`SyncingBridge is online on localhost:${port}. Connecting locally...`);
+          void connectBridge(true);
+        }
+        return;
+      }
+    } catch {
+      // Offline fallback
+    }
+
+    if (bridgeDetectedState) {
+      bridgeDetectedState = false;
+      log('SyncingBridge disconnected.');
+    }
+    if (bridgeDot) {
+      bridgeDot.className = 'status-dot';
+      bridgeDot.classList.add('disconnected');
+    }
+    if (bridgeText) {
+      bridgeText.className = 'status-state-text';
+      bridgeText.classList.add('disconnected');
+      bridgeText.textContent = 'OFFLINE';
+    }
+  }
+
+  if (supportsLocalBridge) {
+    void checkLocalBridge();
+    setInterval(checkLocalBridge, 15_000);
+  }
+
   function scheduleReconnect(): void {
     if (!currentPairingId) return;
     const attempt = stateMachine.incrementReconnect();
@@ -298,6 +443,15 @@ export function initCompanionRuntime(options: CompanionRuntimeOptions): void {
       clearTimeout(reconnectTimeout);
       reconnectTimeout = null;
     }
+    if (localBridgeWs) {
+      try {
+        localBridgeWs.onclose = null;
+        localBridgeWs.close();
+      } catch {
+        // Ignore
+      }
+      localBridgeWs = null;
+    }
     if (ablyChannel) {
       try {
         await ablyChannel.unsubscribe();
@@ -314,7 +468,44 @@ export function initCompanionRuntime(options: CompanionRuntimeOptions): void {
       }
       ablyClient = null;
     }
+    activeTransport = 'none';
     stateMachine.setDisconnected(reason || 'Disconnected');
+  }
+
+  function handleIncomingCommand(command: unknown): void {
+    if (isRelayCommand(command)) {
+      const cmdRecord = command as Record<string, unknown>;
+      const clientOrigin = cmdRecord.client === 'figjam' || cmdRecord.source === 'figjam' ? 'FigJam' : 'Board';
+      if (command.action === 'select') {
+        log(`Selection request received from ${clientOrigin}.`);
+        const reqId = command.id;
+        pendingRequests.track(reqId);
+        window.parent.postMessage({ action: 'get-selection', requestId: reqId }, '*');
+      } else if (command.action === 'export') {
+        log(`Export request received from ${clientOrigin}.`);
+        const reqId = command.id;
+        pendingRequests.track(reqId);
+        const targetShapeId =
+          (typeof cmdRecord.shapeId === 'string' ? cmdRecord.shapeId : null) ||
+          (typeof cmdRecord.nodeId === 'string' ? cmdRecord.nodeId : null) ||
+          (typeof cmdRecord.id === 'string' ? cmdRecord.id : null) ||
+          currentNodeId;
+        const formatVal = cmdRecord.format === 'png' || cmdRecord.format === 'svg' ? cmdRecord.format : 'png';
+        const scaleVal = typeof cmdRecord.scale === 'number' ? cmdRecord.scale : 2;
+        const fileKeyVal = typeof cmdRecord.fileKey === 'string' ? cmdRecord.fileKey : undefined;
+        window.parent.postMessage(
+          {
+            action: 'export-shape',
+            shapeId: targetShapeId,
+            fileKey: fileKeyVal,
+            requestId: reqId,
+            format: formatVal,
+            scale: scaleVal,
+          },
+          '*'
+        );
+      }
+    }
   }
 
   async function connectBridge(isAuto: boolean = false): Promise<void> {
@@ -326,6 +517,19 @@ export function initCompanionRuntime(options: CompanionRuntimeOptions): void {
       return;
     }
 
+    const gen = ++connectGeneration;
+    isConnectingBridge = true;
+
+    try {
+      await connectBridgeInternal(pairingId, isAuto, gen);
+    } finally {
+      if (gen === connectGeneration) {
+        isConnectingBridge = false;
+      }
+    }
+  }
+
+  async function connectBridgeInternal(pairingId: string, isAuto: boolean, gen: number): Promise<void> {
     if (!isAuto) {
       stateMachine.resetReconnect();
     }
@@ -334,6 +538,7 @@ export function initCompanionRuntime(options: CompanionRuntimeOptions): void {
     isConflictState = false;
     currentPairingId = '';
     await disconnectAbly('Connecting...');
+    if (gen !== connectGeneration) return;
 
     if (previousPairingId && previousPairingId !== pairingId) {
       void sendSessionAction(relayUrl, previousPairingId, companionTabId, 'release');
@@ -341,6 +546,104 @@ export function initCompanionRuntime(options: CompanionRuntimeOptions): void {
 
     currentPairingId = pairingId;
     stateMachine.startConnecting(pairingId);
+
+    // 1. Try local SyncingBridge first IF supported & auto-connect is enabled (Zero-cloud local stack)
+    const isBridgeAutoConnect = typeof window !== 'undefined' && localStorage.getItem('syncingboard_bridge_auto_connect') === 'true';
+    if (supportsLocalBridge && isBridgeAutoConnect && typeof WebSocket !== 'undefined') {
+      const port = getBridgePort();
+      let ws: WebSocket | null = null;
+      try {
+        log(`Attempting local connection to SyncingBridge (ws://localhost:${port})...`);
+        ws = new WebSocket(`ws://localhost:${port}/ws`);
+        const candidate = ws;
+        await new Promise<void>((resolve, reject) => {
+          const timeout = setTimeout(() => {
+            candidate.onopen = null;
+            candidate.onerror = null;
+            try { candidate.close(); } catch {}
+            reject(new Error('Bridge timed out'));
+          }, 1500);
+          candidate.onopen = () => {
+            clearTimeout(timeout);
+            resolve();
+          };
+          candidate.onerror = () => {
+            clearTimeout(timeout);
+            try { candidate.close(); } catch {}
+            reject(new Error('Local bridge unreachable'));
+          };
+        });
+
+        if (gen !== connectGeneration) {
+          candidate.onclose = null;
+          try { candidate.close(); } catch {}
+          return;
+        }
+
+        localBridgeWs = candidate;
+        activeTransport = 'local';
+
+        // Register channel
+        candidate.send(JSON.stringify({
+          action: 'register',
+          pairing_id: pairingId,
+          role: 'companion',
+          platform: platform,
+        }));
+
+        candidate.onmessage = (ev) => {
+          try {
+            const raw = typeof ev.data === 'string' ? JSON.parse(ev.data) : null;
+            if (raw && (raw.event === 'command' || raw.action === 'command')) {
+              handleIncomingCommand(raw.payload || raw.data || raw);
+            } else if (raw && (raw.event === 'sync-event' || raw.action === 'sync-event') && raw.payload) {
+              const msg = (raw.payload as { message?: string }).message || raw.payload;
+              if (typeof msg === 'string') {
+                log(`[Miro] ${msg}`);
+              }
+            }
+          } catch {
+            // ignore
+          }
+        };
+
+        candidate.onclose = () => {
+          if (localBridgeWs !== candidate) return;
+          localBridgeWs = null;
+          if (activeTransport === 'local') {
+            log('SyncingBridge local connection closed. Attempting reconnect...');
+            activeTransport = 'none';
+            stateMachine.setDisconnected('Reconnecting...');
+            if (currentPairingId && isValidPairingId(currentPairingId)) {
+              scheduleReconnect();
+            }
+          }
+        };
+
+        try {
+          localStorage.setItem('syncingboard_pairing_id', pairingId);
+        } catch {
+          // sandbox block
+        }
+
+        stateMachine.setConnected();
+        updateStatusUI('connected', 'CONNECTED');
+        log(`Connected to SyncingBridge locally (localhost:${port}). Zero-cloud mode active (Ably disconnected).`);
+        return;
+      } catch {
+        if (ws && ws !== localBridgeWs) {
+          ws.onopen = null;
+          ws.onerror = null;
+          ws.onclose = null;
+          try { ws.close(); } catch {}
+        }
+        if (gen !== connectGeneration) return;
+        log('SyncingBridge not detected locally. Falling back to Cloud Relay (Ably)...');
+      }
+    }
+
+    if (gen !== connectGeneration) return;
+
     log('Connecting to cloud relay channel...');
 
     try {
@@ -398,40 +701,11 @@ export function initCompanionRuntime(options: CompanionRuntimeOptions): void {
         log(`Warning: Presence registration failed: ${presMsg}`);
       }
 
+      activeTransport = 'cloud';
+
       // Subscribe to command events
       await ablyChannel.subscribe('command', (msg: { data: unknown }) => {
-        const command = msg.data;
-        if (isRelayCommand(command)) {
-          const cmdRecord = command as Record<string, unknown>;
-          const clientOrigin = cmdRecord.client === 'figjam' || cmdRecord.source === 'figjam' ? 'FigJam' : 'Board';
-          if (command.action === 'select') {
-            log(`Selection request received from ${clientOrigin}.`);
-            const reqId = command.id;
-            pendingRequests.track(reqId);
-            window.parent.postMessage({ action: 'get-selection', requestId: reqId }, '*');
-          } else if (command.action === 'export' && platform === 'penpot') {
-            log(`Export request received from ${clientOrigin}.`);
-            const reqId = command.id;
-            pendingRequests.track(reqId);
-            const targetShapeId =
-              (typeof cmdRecord.shapeId === 'string' ? cmdRecord.shapeId : null) ||
-              (typeof cmdRecord.nodeId === 'string' ? cmdRecord.nodeId : null) ||
-              (typeof cmdRecord.id === 'string' ? cmdRecord.id : null) ||
-              currentNodeId;
-            const formatVal = cmdRecord.format === 'png' || cmdRecord.format === 'svg' ? cmdRecord.format : 'png';
-            const scaleVal = typeof cmdRecord.scale === 'number' ? cmdRecord.scale : 2;
-            window.parent.postMessage(
-              {
-                action: 'export-shape',
-                shapeId: targetShapeId,
-                requestId: reqId,
-                format: formatVal,
-                scale: scaleVal,
-              },
-              '*'
-            );
-          }
-        }
+        handleIncomingCommand(msg.data);
       });
 
       // Subscribe to companion events (eviction / transfer)
@@ -601,17 +875,27 @@ export function initCompanionRuntime(options: CompanionRuntimeOptions): void {
       updateSelectionCard(d);
 
       // Stream selection for live relay-pull
-      if (ablyChannel && currentPairingId && d && d.id) {
+      if (currentPairingId && d && d.id) {
         const streamPayload = encodeSelectionStream(d.name || '', d.id, d.fileKey || activeFileKey);
-        ablyChannel
-          .publish('selection', streamPayload)
-          .then(() => {
-            log(`Selection published to ${currentPairingId}: ${name}`);
-          })
-          .catch((e: unknown) => {
-            const eMsg = e instanceof Error ? e.message : String(e);
-            log(`Ably publish failed: ${eMsg}`);
-          });
+        if (activeTransport === 'local' && localBridgeWs && localBridgeWs.readyState === WebSocket.OPEN) {
+          localBridgeWs.send(JSON.stringify({
+            action: 'broadcast',
+            pairing_id: currentPairingId,
+            event: 'selection',
+            payload: streamPayload,
+          }));
+          log(`[Local Bridge] Selection published to ${currentPairingId}: ${name}`);
+        } else if (ablyChannel) {
+          ablyChannel
+            .publish('selection', streamPayload)
+            .then(() => {
+              log(`Selection published to ${currentPairingId}: ${name}`);
+            })
+            .catch((e: unknown) => {
+              const eMsg = e instanceof Error ? e.message : String(e);
+              log(`Ably publish failed: ${eMsg}`);
+            });
+        }
       }
     }
 
@@ -621,36 +905,20 @@ export function initCompanionRuntime(options: CompanionRuntimeOptions): void {
       }
       const request = pendingRequests.take(response.requestId);
       if (request) {
-        void submitRelayResult({
-          relayUrl,
-          pairingId: currentPairingId,
-          requestId: request.id,
-          data: response.data,
-          platform,
-          ablyChannel,
-        });
-        const count = response.selectionCount || 0;
-        log(
-          `Selection returned: ${response.data ? response.data.name : 'None selected'}${
-            platform === 'figma' ? ` (Figma saw ${count} selected items)` : ''
-          }`
-        );
-      }
-    }
-
-    if (response.action === 'export-result' && platform === 'penpot') {
-      const request = pendingRequests.take(response.requestId);
-      if (request) {
-        if (response.error) {
-          void submitRelayResult({
-            relayUrl,
-            pairingId: currentPairingId,
-            requestId: request.id,
-            error: response.error,
-            platform,
-            ablyChannel,
-          });
-          log(`Export failed: ${response.error}`);
+        if (activeTransport === 'local' && localBridgeWs && localBridgeWs.readyState === WebSocket.OPEN) {
+          localBridgeWs.send(JSON.stringify({
+            action: 'broadcast',
+            pairing_id: currentPairingId,
+            event: 'result',
+            payload: {
+              id: request.id,
+              requestId: request.id,
+              data: response.data,
+              selectionCount: response.selectionCount,
+              platform,
+            },
+          }));
+          log(`[Local Bridge] Selection returned: ${response.data ? response.data.name : 'None selected'}`);
         } else {
           void submitRelayResult({
             relayUrl,
@@ -660,7 +928,55 @@ export function initCompanionRuntime(options: CompanionRuntimeOptions): void {
             platform,
             ablyChannel,
           });
-          log('Export payload transmitted to Miro.');
+          const count = response.selectionCount || 0;
+          log(
+            `Selection returned: ${response.data ? response.data.name : 'None selected'}${
+              platform === 'figma' ? ` (Figma saw ${count} selected items)` : ''
+            }`
+          );
+        }
+      }
+    }
+
+    if (response.action === 'export-result') {
+      const request = pendingRequests.take(response.requestId);
+      if (request) {
+        if (activeTransport === 'local' && localBridgeWs && localBridgeWs.readyState === WebSocket.OPEN) {
+          localBridgeWs.send(JSON.stringify({
+            action: 'broadcast',
+            pairing_id: currentPairingId,
+            event: 'result',
+            payload: {
+              id: request.id,
+              requestId: request.id,
+              data: response.data,
+              error: response.error,
+              platform,
+            },
+          }));
+          log(response.error ? `[Local Bridge] Export failed: ${response.error}` : '[Local Bridge] Export payload transmitted to Miro.');
+        } else {
+          if (response.error) {
+            void submitRelayResult({
+              relayUrl,
+              pairingId: currentPairingId,
+              requestId: request.id,
+              error: response.error,
+              platform,
+              ablyChannel,
+            });
+            log(`Export failed: ${response.error}`);
+          } else {
+            void submitRelayResult({
+              relayUrl,
+              pairingId: currentPairingId,
+              requestId: request.id,
+              data: response.data,
+              platform,
+              ablyChannel,
+            });
+            log('Export payload transmitted to Miro.');
+          }
         }
       }
     }
@@ -705,6 +1021,82 @@ export function initCompanionRuntime(options: CompanionRuntimeOptions): void {
     window.addEventListener('pagehide', () => {
       clearInterval(penpotPollInterval);
     });
+  }
+
+  // Clear logs button
+  const clearLogBtn = document.getElementById('clear-log-btn') as HTMLButtonElement | null;
+  clearLogBtn?.addEventListener('click', () => {
+    if (logBox) logBox.textContent = '';
+  });
+
+  // Bridge Auto-Connect Toggle
+  if (bridgeAutoConnectToggle) {
+    const isAuto = typeof window !== 'undefined' && localStorage.getItem('syncingboard_bridge_auto_connect') === 'true';
+    if (!supportsLocalBridge) {
+      bridgeAutoConnectToggle.checked = false;
+      bridgeAutoConnectToggle.disabled = true;
+      if (bridgeAutoConnectToggle.parentElement) {
+        bridgeAutoConnectToggle.parentElement.style.opacity = '0.45';
+        bridgeAutoConnectToggle.parentElement.style.pointerEvents = 'none';
+      }
+      if (bridgeDesc) {
+        bridgeDesc.textContent = 'Unavailable in Penpot web sandbox (Chrome LNA) — using Cloud Relay';
+      }
+    } else {
+      bridgeAutoConnectToggle.checked = isAuto;
+      bridgeAutoConnectToggle.addEventListener('change', () => {
+        const checked = bridgeAutoConnectToggle.checked;
+        try {
+          localStorage.setItem('syncingboard_bridge_auto_connect', checked ? 'true' : 'false');
+        } catch {
+          // sandbox block
+        }
+        if (checked) {
+          log('SyncingBridge auto-connect enabled.');
+          const pId = pairingInput?.value?.trim() || currentPairingId;
+          if (pId && isValidPairingId(pId)) {
+            void connectBridge(false);
+          } else {
+            void checkLocalBridge();
+          }
+        } else {
+          log('SyncingBridge auto-connect disabled. Switching to Cloud Relay (Ably)...');
+          if (activeTransport === 'local' && localBridgeWs) {
+            localBridgeWs.onclose = null;
+            localBridgeWs.close();
+            localBridgeWs = null;
+            activeTransport = 'none';
+          }
+          const pId = pairingInput?.value?.trim() || currentPairingId;
+          if (pId && isValidPairingId(pId)) {
+            void connectBridge(false);
+          } else {
+            updateStatusUI('disconnected', 'DISCONNECTED');
+          }
+        }
+      });
+    }
+  }
+
+  // Bridge port input
+  const companionPortInput = document.getElementById('companion-bridge-port') as HTMLInputElement | null;
+  if (companionPortInput) {
+    companionPortInput.value = getBridgePort();
+    if (!supportsLocalBridge) {
+      companionPortInput.disabled = true;
+      companionPortInput.style.opacity = '0.45';
+    } else {
+      companionPortInput.addEventListener('change', () => {
+        const p = companionPortInput.value.trim() || '4401';
+        try {
+          localStorage.setItem('syncingboard_bridge_port', p);
+          log(`Bridge port configured to ${p}.`);
+          void checkLocalBridge();
+        } catch {
+          // sandbox block
+        }
+      });
+    }
   }
 
   // Restore saved pairing ID

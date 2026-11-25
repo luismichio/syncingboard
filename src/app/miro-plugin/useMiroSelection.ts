@@ -9,7 +9,8 @@ export interface SyncedImage {
   width?: number;
   format?: 'png' | 'svg';
   scale?: number;
-  platform?: 'figma' | 'penpot';
+  platform?: 'figma' | 'penpot' | 'github';
+  etag?: string;
 }
 
 /**
@@ -104,6 +105,37 @@ export function useMiroSelection(isInitMode: boolean | null) {
             const hasAnyImage = selection.some(item => item.type === 'image');
 
             for (const item of selection) {
+              if (
+                item.type === 'text' ||
+                item.type === 'shape' ||
+                item.type === 'sticky_note' ||
+                item.type === 'card'
+              ) {
+                try {
+                  const metadata = (await item.getMetadata()) as Record<string, unknown> | undefined;
+                  const syncData = metadata?.syncingboard as
+                    | { platform?: string; url?: string; sectionId?: string; sectionTitle?: string }
+                    | undefined;
+                  if (
+                    syncData?.platform === 'github' &&
+                    typeof syncData.url === 'string' &&
+                    typeof syncData.sectionId === 'string'
+                  ) {
+                    const label = syncData.sectionTitle || syncData.sectionId;
+                    synced.push({
+                      id: item.id,
+                      title: label,
+                      fileKey: syncData.url,
+                      nodeId: syncData.sectionId,
+                      nodeName: label,
+                      platform: 'github',
+                    });
+                  }
+                } catch {
+                  // ignore metadata errors on non-synced text widgets
+                }
+                continue;
+              }
               if (item.type === 'image') {
                 // 1. Try title-based parsing first
                 if (item.title) {

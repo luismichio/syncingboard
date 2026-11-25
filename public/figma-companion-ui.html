@@ -80,6 +80,33 @@
       color: var(--text-muted);
       margin-top: 3px;
     }
+    .header-transport {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: default;
+      opacity: 0.85;
+      transition: opacity 0.15s ease, color 0.15s ease;
+      color: var(--text-muted);
+    }
+    .header-transport:hover {
+      opacity: 1;
+    }
+    .header-transport.local {
+      color: var(--success, #22c55e);
+    }
+    .header-transport.cloud {
+      color: var(--accent);
+    }
+    .header-transport.disconnected {
+      color: var(--text-muted);
+      opacity: 0.45;
+    }
+    .header-transport.connecting {
+      color: #eab308;
+      animation: pulse 1.5s infinite;
+    }
 
     /* Tab Navigation (Target Parity: TabNav.tsx) */
     .tab-bar {
@@ -296,6 +323,48 @@
       color: var(--accent);
     }
 
+    /* Toggle Switch */
+    .toggle-switch {
+      position: relative;
+      display: inline-block;
+      width: 30px;
+      height: 16px;
+      flex-shrink: 0;
+    }
+    .toggle-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    .toggle-slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: var(--border-card);
+      transition: 0.2s;
+      border-radius: 16px;
+    }
+    .toggle-slider:before {
+      position: absolute;
+      content: "";
+      height: 10px;
+      width: 10px;
+      left: 3px;
+      bottom: 3px;
+      background-color: white;
+      transition: 0.2s;
+      border-radius: 50%;
+    }
+    input:checked + .toggle-slider {
+      background-color: var(--accent);
+    }
+    input:checked + .toggle-slider:before {
+      transform: translateX(14px);
+    }
+
     /* Target Theme Toggle Button (ThemeToggle.tsx Parity) */
     .theme-toggle-btn {
       padding: 4px 8px;
@@ -374,11 +443,26 @@
         <h2>SyncingBoard</h2>
         <div class="subtitle">Figma Companion Relay</div>
       </div>
+      <div id="header-transport-indicator" class="header-transport disconnected" title="Relay: Disconnected">
+        <!-- Local Bridge: Lucide Radio / Signal Icon -->
+        <svg id="transport-icon-local" style="display: none;" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="Local Bridge Active">
+          <path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/>
+          <path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/>
+          <circle cx="12" cy="12" r="2"/>
+          <path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/>
+          <path d="M19.1 4.9C23 8.8 23 15.1 19.1 19"/>
+        </svg>
+        <!-- Cloud Relay: Lucide Cloud Icon -->
+        <svg id="transport-icon-cloud" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="Cloud Relay">
+          <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/>
+        </svg>
+      </div>
     </header>
 
     <!-- Tab Bar -->
     <div class="tab-bar">
       <button id="tab-btn-sync" class="tab-btn active" type="button">SYNC</button>
+      <button id="tab-btn-docs" class="tab-btn" type="button" style="display: none;">DOCS</button>
       <button id="tab-btn-settings" class="tab-btn" type="button">SETTINGS</button>
     </div>
 
@@ -409,32 +493,6 @@
         </div>
       </div>
 
-      <!-- Connection Status Card (Target Parity: no outline/box around status text) -->
-      <div class="section-label">Connection Status</div>
-      <div class="card">
-        <div class="status-row">
-          <div class="status-left">
-            <span class="status-title">Cloud Relay (Ably)</span>
-            <span class="status-desc">WebSocket channel for Miro sync</span>
-          </div>
-          <div class="status-indicator">
-            <span id="status-dot" class="status-dot"></span>
-            <span id="status-text" class="status-state-text">Disconnected</span>
-          </div>
-        </div>
-        <div style="border-top: 1px solid var(--border-card); margin: 2px 0;"></div>
-        <div class="status-row">
-          <div class="status-left">
-            <span class="status-title">Plugin Bridge (Local)</span>
-            <span class="status-desc">Host sandbox document access</span>
-          </div>
-          <div class="status-indicator">
-            <span id="plugin-dot" class="status-dot"></span>
-            <span id="plugin-text" class="status-state-text">Unknown</span>
-          </div>
-        </div>
-      </div>
-
       <!-- Live Selection Node Card (Target Parity: text-xs name and text-[9px] font-mono ID) -->
       <div class="section-label">Active Selection</div>
       <div class="card">
@@ -458,12 +516,131 @@
           </div>
         </div>
       </div>
+
+      <!-- Activity Log (Tab 1) -->
+      <div class="section-label" style="display: flex; justify-content: space-between; align-items: center;">
+        <span>Activity Log</span>
+        <button id="clear-log-btn" class="btn-clear" type="button" style="font-size: 8px; padding: 1px 5px;">CLEAR</button>
+      </div>
+      <div class="card">
+        <div id="log" class="log-box">Initialized. Ready to pair.</div>
+      </div>
+    </div>
+
+    <!-- TAB 1B: GITHUB DOCS-AS-CODE VIEW (Penpot Target) -->
+    <div id="view-docs" class="tab-content">
+      <!-- Selected Bound Text Shape Card (shown when a bound Penpot Text shape is selected) -->
+      <div id="docs-selected-card" style="display: none; flex-direction: column; gap: 6px; margin-bottom: 10px;">
+        <div class="section-label">Selected Bound Doc</div>
+        <div class="card" style="display: flex; flex-direction: column; gap: 6px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
+            <span id="docs-selected-title" style="font-size: 11px; font-weight: 600; color: var(--text-page); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"></span>
+            <span style="font-size: 8px; font-family: monospace; color: var(--accent); padding: 1px 4px; border: 1px solid var(--accent); border-radius: 3px;">GITHUB</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 4px;">
+            <a id="docs-selected-url" href="#" target="_blank" rel="noopener noreferrer" style="flex: 1; font-size: 9px; font-family: monospace; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-decoration: none;" title="Open on GitHub"></a>
+            <a id="docs-selected-open-btn" href="#" target="_blank" rel="noopener noreferrer" class="btn-clear" style="font-size: 8px; padding: 1px 5px; text-decoration: none; display: inline-flex; align-items: center;" title="Open GitHub file">OPEN</a>
+            <button id="docs-selected-copy-btn" type="button" class="btn-clear" style="font-size: 8px; padding: 1px 5px;" title="Copy GitHub URL">COPY</button>
+          </div>
+          <div style="display: flex; gap: 4px;">
+            <select id="docs-selected-branch" title="Select branch" style="width: 82px; font-size: 9px; font-family: monospace; color: var(--accent); background: var(--bg-page); border: 1px solid var(--border-card); border-radius: 4px; padding: 5px 4px;"></select>
+            <select id="docs-selected-section" style="flex: 1; min-width: 0; font-size: 10px; background: var(--bg-page); border: 1px solid var(--border-card); border-radius: 4px; padding: 5px 6px; color: var(--text-page);"></select>
+          </div>
+          <button id="docs-sync-selected-btn" class="btn-target-connect" type="button" style="width: 100%;">SYNC SELECTED</button>
+        </div>
+      </div>
+
+      <div class="section-label">GitHub Markdown Source</div>
+      <div class="card" style="display: flex; flex-direction: column; gap: 8px;">
+        <div style="display: flex; gap: 6px;">
+          <input type="text" id="docs-github-url" placeholder="https://github.com/org/repo/blob/main/README.md" style="flex: 1; font-size: 10px; font-family: monospace; background: var(--bg-page); border: 1px solid var(--border-card); border-radius: 4px; padding: 6px 8px; color: var(--text-page);" />
+          <button id="docs-load-btn" class="btn-target-connect" type="button">LOAD</button>
+        </div>
+        <input type="password" id="docs-github-pat" placeholder="Optional GitHub PAT (or connect in Settings)" style="width: 100%; box-sizing: border-box; font-size: 10px; font-family: monospace; background: var(--bg-page); border: 1px solid var(--border-card); border-radius: 4px; padding: 5px 8px; color: var(--text-page);" />
+        <div id="docs-section-wrap" style="display: none; flex-direction: column; gap: 6px;">
+          <div style="display: flex; gap: 4px;">
+            <select id="docs-branch-select" title="Select branch" style="width: 82px; font-size: 9px; font-family: monospace; color: var(--accent); background: var(--bg-page); border: 1px solid var(--border-card); border-radius: 4px; padding: 5px 4px;"></select>
+            <select id="docs-section-select" style="flex: 1; min-width: 0; font-size: 10px; background: var(--bg-page); border: 1px solid var(--border-card); border-radius: 4px; padding: 6px 8px; color: var(--text-page);"></select>
+          </div>
+          <div style="display: flex; gap: 6px;">
+            <button id="docs-place-btn" class="btn-target-connect" type="button" style="flex: 1;">PLACE TEXT</button>
+            <button id="docs-bind-btn" class="btn-target-connect" type="button" style="flex: 1;">BIND SELECTED</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-label">Page Sync</div>
+      <div class="card" style="display: flex; flex-direction: column; gap: 6px;">
+        <button id="docs-sync-all-btn" class="btn-target-connect" type="button" style="width: 100%;">SYNC ALL BOUND DOCS</button>
+        <div id="docs-status-text" style="font-size: 10px; color: var(--text-muted); line-height: 1.4;">
+          Load a GitHub .md file to place or bind Penpot Text shapes.
+        </div>
+      </div>
     </div>
 
     <!-- TAB 2: SETTINGS VIEW -->
     <div id="view-settings" class="tab-content">
-      <!-- Integrations -->
+      <!-- Integrations (Merged with Connection Status) -->
       <div class="section-label">Integrations</div>
+      <div class="card">
+        <div class="status-row">
+          <div class="status-left">
+            <span id="relay-title" class="status-title">Relay Connection</span>
+            <span id="relay-desc" class="status-desc">WebSocket channel for Miro sync</span>
+          </div>
+          <div class="status-indicator">
+            <span id="status-dot" class="status-dot"></span>
+            <span id="status-text" class="status-state-text">Disconnected</span>
+          </div>
+        </div>
+        <div style="border-top: 1px solid var(--border-card); margin: 2px 0;"></div>
+        <div class="status-row">
+          <div class="status-left">
+            <span class="status-title">SyncingBridge (Local)</span>
+            <span id="bridge-desc" class="status-desc">Auto-connect to local desktop bridge</span>
+          </div>
+          <div class="status-indicator">
+            <span id="bridge-dot" class="status-dot"></span>
+            <label class="toggle-switch">
+              <input type="checkbox" id="toggle-bridge-auto-connect" />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+        </div>
+        <div style="border-top: 1px solid var(--border-card); margin: 2px 0;"></div>
+        <div class="status-row">
+          <div class="status-left">
+            <span class="status-title">Broker Port</span>
+            <span class="status-desc">Local loopback WebSocket port</span>
+          </div>
+          <input type="number" id="companion-bridge-port" min="1024" max="65535" value="4401" style="width: 58px; font-family: monospace; font-size: 10px; font-weight: 600; color: var(--accent); background: var(--bg-page); border: 1px solid var(--border-card); border-radius: 4px; padding: 2px 4px; text-align: right;" />
+        </div>
+        <div style="border-top: 1px solid var(--border-card); margin: 2px 0;"></div>
+        <div class="status-row">
+          <div class="status-left">
+            <span class="status-title">Plugin Bridge (Local)</span>
+            <span class="status-desc">Host sandbox document access</span>
+          </div>
+          <div class="status-indicator">
+            <span id="plugin-dot" class="status-dot"></span>
+            <span id="plugin-text" class="status-state-text">Unknown</span>
+          </div>
+        </div>
+        <div id="github-oauth-divider" style="display: none; border-top: 1px solid var(--border-card); margin: 2px 0;"></div>
+        <div id="github-oauth-row" class="status-row" style="display: none;">
+          <div class="status-left">
+            <span class="status-title">GitHub Status</span>
+            <span id="github-status-text" class="status-desc">Not connected (public repos only)</span>
+          </div>
+          <div class="status-indicator" style="gap: 6px;">
+            <span id="github-dot" class="status-dot"></span>
+            <button id="github-connect-btn" class="btn-target-connect" type="button">CONNECT</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pairing ID Card -->
+      <div class="section-label">Pairing ID</div>
       <div class="card">
         <div class="status-row">
           <span class="status-title">Pairing ID</span>
@@ -497,12 +674,6 @@
         </div>
       </div>
 
-      <!-- Activity Log -->
-      <div class="section-label">Activity Log</div>
-      <div class="card">
-        <div id="log" class="log-box">Initialized. Ready to pair.</div>
-      </div>
-
       <!-- Documentation Link (Target Parity: SettingsTab.tsx) -->
       <div class="docs-container">
         <a href="https://www.syncingboard.com/docs" target="_blank" rel="noopener noreferrer" class="docs-link">
@@ -517,7 +688,7 @@
 
     <!-- Bottom Version Footer (Target Parity: VersionStamp.tsx) -->
     <footer class="app-footer">
-      <div class="version-badge">v0.17.0 Community</div>
+      <div class="version-badge">v0.18.0 Community</div>
     </footer>
   </div>
 
@@ -873,16 +1044,30 @@
     const win = window;
     const companionTabId = win.companionTabId || (win.companionTabId = generateTabId());
     const tabBtnSync = document.getElementById("tab-btn-sync");
+    const tabBtnDocs = document.getElementById("tab-btn-docs");
     const tabBtnSettings = document.getElementById("tab-btn-settings");
     const viewSync = document.getElementById("view-sync");
+    const viewDocs = document.getElementById("view-docs");
     const viewSettings = document.getElementById("view-settings");
+    if (platform === "penpot" && tabBtnDocs) {
+      tabBtnDocs.style.display = "";
+    }
     const pairingInput = document.getElementById("pairing-id");
     const connectBtn = document.getElementById("connect-btn");
     const togglePairingVisBtn = document.getElementById("toggle-pairing-vis");
     const statusText = document.getElementById("status-text");
     const statusDot = document.getElementById("status-dot");
+    const relayTitle = document.getElementById("relay-title");
+    const relayDesc = document.getElementById("relay-desc");
     const pluginText = document.getElementById("plugin-text");
     const pluginDot = document.getElementById("plugin-dot");
+    const bridgeText = document.getElementById("bridge-text");
+    const bridgeDot = document.getElementById("bridge-dot");
+    const bridgeAutoConnectToggle = document.getElementById("toggle-bridge-auto-connect");
+    const bridgeDesc = document.getElementById("bridge-desc");
+    const headerTransport = document.getElementById("header-transport-indicator");
+    const transportIconLocal = document.getElementById("transport-icon-local");
+    const transportIconCloud = document.getElementById("transport-icon-cloud");
     const logBox = document.getElementById("log");
     const linkCard = document.getElementById("link-card");
     const fileUrlInput = document.getElementById("file-url-input");
@@ -901,6 +1086,10 @@
     const copyNodeFeedback = document.getElementById("copy-node-feedback");
     let ablyClient = null;
     let ablyChannel = null;
+    let localBridgeWs = null;
+    let activeTransport = "none";
+    let connectGeneration = 0;
+    let isConnectingBridge = false;
     let reconnectTimeout = null;
     let currentPairingId = "";
     let isConflictState = false;
@@ -915,19 +1104,15 @@
       updateStatusUI(status, text);
     });
     function switchTab(tab) {
-      if (tab === "sync") {
-        tabBtnSync?.classList.add("active");
-        tabBtnSettings?.classList.remove("active");
-        viewSync?.classList.add("active");
-        viewSettings?.classList.remove("active");
-      } else {
-        tabBtnSync?.classList.remove("active");
-        tabBtnSettings?.classList.add("active");
-        viewSync?.classList.remove("active");
-        viewSettings?.classList.add("active");
-      }
+      tabBtnSync?.classList.toggle("active", tab === "sync");
+      tabBtnDocs?.classList.toggle("active", tab === "docs");
+      tabBtnSettings?.classList.toggle("active", tab === "settings");
+      viewSync?.classList.toggle("active", tab === "sync");
+      viewDocs?.classList.toggle("active", tab === "docs");
+      viewSettings?.classList.toggle("active", tab === "settings");
     }
     tabBtnSync?.addEventListener("click", () => switchTab("sync"));
+    tabBtnDocs?.addEventListener("click", () => switchTab("docs"));
     tabBtnSettings?.addEventListener("click", () => switchTab("settings"));
     function log(message) {
       if (!logBox) return;
@@ -936,6 +1121,24 @@
 ` + (logBox.textContent || "");
     }
     function updateStatusUI(status, text) {
+      const port = getBridgePort();
+      if (relayTitle && relayDesc) {
+        if (status === "connected") {
+          if (activeTransport === "local") {
+            relayTitle.textContent = "SyncingBridge (Local)";
+            relayDesc.textContent = `Zero-cloud local WebSocket on localhost:${port}`;
+          } else {
+            relayTitle.textContent = "Cloud Relay (Ably)";
+            relayDesc.textContent = "WebSocket channel for Miro sync";
+          }
+        } else if (status === "connecting") {
+          relayTitle.textContent = "Connecting...";
+          relayDesc.textContent = "Establishing WebSocket connection";
+        } else {
+          relayTitle.textContent = "Relay Connection";
+          relayDesc.textContent = "Connect via Pairing ID in Settings";
+        }
+      }
       if (statusText) {
         statusText.className = "status-state-text";
         if (status === "connected") {
@@ -964,6 +1167,36 @@
         } else {
           connectBtn.className = "btn-target-connect";
           connectBtn.textContent = "CONNECT";
+        }
+      }
+      if (bridgeDot) {
+        if (activeTransport === "local") {
+          bridgeDot.className = "status-dot connected";
+        } else {
+          bridgeDot.className = "status-dot disconnected";
+        }
+      }
+      if (headerTransport && transportIconLocal && transportIconCloud) {
+        if (status === "connected" && activeTransport === "local") {
+          headerTransport.className = "header-transport local";
+          headerTransport.title = `Relay: SyncingBridge Local WebSocket active (localhost:${port})`;
+          transportIconLocal.style.display = "block";
+          transportIconCloud.style.display = "none";
+        } else if (status === "connected" && activeTransport === "cloud") {
+          headerTransport.className = "header-transport cloud";
+          headerTransport.title = "Relay: Cloud Relay (Ably) active";
+          transportIconLocal.style.display = "none";
+          transportIconCloud.style.display = "block";
+        } else if (status === "connecting") {
+          headerTransport.className = "header-transport connecting";
+          headerTransport.title = "Relay: Connecting...";
+          transportIconLocal.style.display = "none";
+          transportIconCloud.style.display = "block";
+        } else {
+          headerTransport.className = "header-transport disconnected";
+          headerTransport.title = "Relay: Disconnected";
+          transportIconLocal.style.display = "none";
+          transportIconCloud.style.display = "block";
         }
       }
     }
@@ -1044,6 +1277,69 @@
         }
       }
     }
+    function getBridgePort() {
+      try {
+        return localStorage.getItem("syncingboard_bridge_port") || "4401";
+      } catch {
+        return "4401";
+      }
+    }
+    const supportsLocalBridge = platform !== "penpot";
+    let bridgeDetectedState = false;
+    async function checkLocalBridge() {
+      if (!supportsLocalBridge) return;
+      const port = getBridgePort();
+      try {
+        const res = await fetch(`http://localhost:${port}/health`, {
+          method: "GET",
+          signal: AbortSignal.timeout(1500)
+        });
+        if (res.ok) {
+          if (!bridgeDetectedState) {
+            bridgeDetectedState = true;
+            log(`SyncingBridge detected on localhost:${port}.`);
+          }
+          if (bridgeDot) {
+            bridgeDot.className = "status-dot";
+            bridgeDot.classList.add("connected");
+          }
+          if (bridgeText) {
+            bridgeText.className = "status-state-text";
+            bridgeText.classList.add("connected");
+            bridgeText.textContent = `ACTIVE (${port})`;
+          }
+          let autoConnect = false;
+          try {
+            autoConnect = localStorage.getItem("syncingboard_bridge_auto_connect") === "true";
+          } catch {
+          }
+          const effectivePairingId = currentPairingId || pairingInput?.value?.trim() || "";
+          if (autoConnect && !isConnectingBridge && effectivePairingId && isValidPairingId(effectivePairingId) && activeTransport !== "local" && stateMachine.getState() !== "connecting") {
+            log(`SyncingBridge is online on localhost:${port}. Connecting locally...`);
+            void connectBridge(true);
+          }
+          return;
+        }
+      } catch {
+      }
+      if (bridgeDetectedState) {
+        bridgeDetectedState = false;
+        log("SyncingBridge disconnected.");
+      }
+      if (bridgeDot) {
+        bridgeDot.className = "status-dot";
+        bridgeDot.classList.add("disconnected");
+      }
+      if (bridgeText) {
+        bridgeText.className = "status-state-text";
+        bridgeText.classList.add("disconnected");
+        bridgeText.textContent = "OFFLINE";
+      }
+    }
+    if (supportsLocalBridge) {
+      void checkLocalBridge();
+      setInterval(checkLocalBridge, 15e3);
+    }
     function scheduleReconnect() {
       if (!currentPairingId) return;
       const attempt = stateMachine.incrementReconnect();
@@ -1070,6 +1366,14 @@
         clearTimeout(reconnectTimeout);
         reconnectTimeout = null;
       }
+      if (localBridgeWs) {
+        try {
+          localBridgeWs.onclose = null;
+          localBridgeWs.close();
+        } catch {
+        }
+        localBridgeWs = null;
+      }
       if (ablyChannel) {
         try {
           await ablyChannel.unsubscribe();
@@ -1084,7 +1388,39 @@
         }
         ablyClient = null;
       }
+      activeTransport = "none";
       stateMachine.setDisconnected(reason || "Disconnected");
+    }
+    function handleIncomingCommand(command) {
+      if (isRelayCommand(command)) {
+        const cmdRecord = command;
+        const clientOrigin = cmdRecord.client === "figjam" || cmdRecord.source === "figjam" ? "FigJam" : "Board";
+        if (command.action === "select") {
+          log(`Selection request received from ${clientOrigin}.`);
+          const reqId = command.id;
+          pendingRequests.track(reqId);
+          window.parent.postMessage({ action: "get-selection", requestId: reqId }, "*");
+        } else if (command.action === "export") {
+          log(`Export request received from ${clientOrigin}.`);
+          const reqId = command.id;
+          pendingRequests.track(reqId);
+          const targetShapeId = (typeof cmdRecord.shapeId === "string" ? cmdRecord.shapeId : null) || (typeof cmdRecord.nodeId === "string" ? cmdRecord.nodeId : null) || (typeof cmdRecord.id === "string" ? cmdRecord.id : null) || currentNodeId;
+          const formatVal = cmdRecord.format === "png" || cmdRecord.format === "svg" ? cmdRecord.format : "png";
+          const scaleVal = typeof cmdRecord.scale === "number" ? cmdRecord.scale : 2;
+          const fileKeyVal = typeof cmdRecord.fileKey === "string" ? cmdRecord.fileKey : void 0;
+          window.parent.postMessage(
+            {
+              action: "export-shape",
+              shapeId: targetShapeId,
+              fileKey: fileKeyVal,
+              requestId: reqId,
+              format: formatVal,
+              scale: scaleVal
+            },
+            "*"
+          );
+        }
+      }
     }
     async function connectBridge(isAuto = false) {
       const rawPairing = pairingInput ? pairingInput.value : "";
@@ -1093,6 +1429,17 @@
         log('Error: Pairing ID must start with "sb_" and be between 4 and 16 characters.');
         return;
       }
+      const gen = ++connectGeneration;
+      isConnectingBridge = true;
+      try {
+        await connectBridgeInternal(pairingId, isAuto, gen);
+      } finally {
+        if (gen === connectGeneration) {
+          isConnectingBridge = false;
+        }
+      }
+    }
+    async function connectBridgeInternal(pairingId, isAuto, gen) {
       if (!isAuto) {
         stateMachine.resetReconnect();
       }
@@ -1100,11 +1447,108 @@
       isConflictState = false;
       currentPairingId = "";
       await disconnectAbly("Connecting...");
+      if (gen !== connectGeneration) return;
       if (previousPairingId && previousPairingId !== pairingId) {
         void sendSessionAction(relayUrl, previousPairingId, companionTabId, "release");
       }
       currentPairingId = pairingId;
       stateMachine.startConnecting(pairingId);
+      const isBridgeAutoConnect = typeof window !== "undefined" && localStorage.getItem("syncingboard_bridge_auto_connect") === "true";
+      if (supportsLocalBridge && isBridgeAutoConnect && typeof WebSocket !== "undefined") {
+        const port = getBridgePort();
+        let ws = null;
+        try {
+          log(`Attempting local connection to SyncingBridge (ws://localhost:${port})...`);
+          ws = new WebSocket(`ws://localhost:${port}/ws`);
+          const candidate = ws;
+          await new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+              candidate.onopen = null;
+              candidate.onerror = null;
+              try {
+                candidate.close();
+              } catch {
+              }
+              reject(new Error("Bridge timed out"));
+            }, 1500);
+            candidate.onopen = () => {
+              clearTimeout(timeout);
+              resolve();
+            };
+            candidate.onerror = () => {
+              clearTimeout(timeout);
+              try {
+                candidate.close();
+              } catch {
+              }
+              reject(new Error("Local bridge unreachable"));
+            };
+          });
+          if (gen !== connectGeneration) {
+            candidate.onclose = null;
+            try {
+              candidate.close();
+            } catch {
+            }
+            return;
+          }
+          localBridgeWs = candidate;
+          activeTransport = "local";
+          candidate.send(JSON.stringify({
+            action: "register",
+            pairing_id: pairingId,
+            role: "companion",
+            platform
+          }));
+          candidate.onmessage = (ev) => {
+            try {
+              const raw = typeof ev.data === "string" ? JSON.parse(ev.data) : null;
+              if (raw && (raw.event === "command" || raw.action === "command")) {
+                handleIncomingCommand(raw.payload || raw.data || raw);
+              } else if (raw && (raw.event === "sync-event" || raw.action === "sync-event") && raw.payload) {
+                const msg = raw.payload.message || raw.payload;
+                if (typeof msg === "string") {
+                  log(`[Miro] ${msg}`);
+                }
+              }
+            } catch {
+            }
+          };
+          candidate.onclose = () => {
+            if (localBridgeWs !== candidate) return;
+            localBridgeWs = null;
+            if (activeTransport === "local") {
+              log("SyncingBridge local connection closed. Attempting reconnect...");
+              activeTransport = "none";
+              stateMachine.setDisconnected("Reconnecting...");
+              if (currentPairingId && isValidPairingId(currentPairingId)) {
+                scheduleReconnect();
+              }
+            }
+          };
+          try {
+            localStorage.setItem("syncingboard_pairing_id", pairingId);
+          } catch {
+          }
+          stateMachine.setConnected();
+          updateStatusUI("connected", "CONNECTED");
+          log(`Connected to SyncingBridge locally (localhost:${port}). Zero-cloud mode active (Ably disconnected).`);
+          return;
+        } catch {
+          if (ws && ws !== localBridgeWs) {
+            ws.onopen = null;
+            ws.onerror = null;
+            ws.onclose = null;
+            try {
+              ws.close();
+            } catch {
+            }
+          }
+          if (gen !== connectGeneration) return;
+          log("SyncingBridge not detected locally. Falling back to Cloud Relay (Ably)...");
+        }
+      }
+      if (gen !== connectGeneration) return;
       log("Connecting to cloud relay channel...");
       try {
         if (typeof Ably === "undefined" || !Ably.Realtime) {
@@ -1151,35 +1595,9 @@
           const presMsg = presErr instanceof Error ? presErr.message : String(presErr);
           log(`Warning: Presence registration failed: ${presMsg}`);
         }
+        activeTransport = "cloud";
         await ablyChannel.subscribe("command", (msg) => {
-          const command = msg.data;
-          if (isRelayCommand(command)) {
-            const cmdRecord = command;
-            const clientOrigin = cmdRecord.client === "figjam" || cmdRecord.source === "figjam" ? "FigJam" : "Board";
-            if (command.action === "select") {
-              log(`Selection request received from ${clientOrigin}.`);
-              const reqId = command.id;
-              pendingRequests.track(reqId);
-              window.parent.postMessage({ action: "get-selection", requestId: reqId }, "*");
-            } else if (command.action === "export" && platform === "penpot") {
-              log(`Export request received from ${clientOrigin}.`);
-              const reqId = command.id;
-              pendingRequests.track(reqId);
-              const targetShapeId = (typeof cmdRecord.shapeId === "string" ? cmdRecord.shapeId : null) || (typeof cmdRecord.nodeId === "string" ? cmdRecord.nodeId : null) || (typeof cmdRecord.id === "string" ? cmdRecord.id : null) || currentNodeId;
-              const formatVal = cmdRecord.format === "png" || cmdRecord.format === "svg" ? cmdRecord.format : "png";
-              const scaleVal = typeof cmdRecord.scale === "number" ? cmdRecord.scale : 2;
-              window.parent.postMessage(
-                {
-                  action: "export-shape",
-                  shapeId: targetShapeId,
-                  requestId: reqId,
-                  format: formatVal,
-                  scale: scaleVal
-                },
-                "*"
-              );
-            }
-          }
+          handleIncomingCommand(msg.data);
         });
         await ablyChannel.subscribe("companion-event", (msg) => {
           const data = msg.data;
@@ -1319,14 +1737,24 @@
         const name = d && d.name ? d.name : "None";
         log(`Selected node: ${name}`);
         updateSelectionCard(d);
-        if (ablyChannel && currentPairingId && d && d.id) {
+        if (currentPairingId && d && d.id) {
           const streamPayload = encodeSelectionStream(d.name || "", d.id, d.fileKey || activeFileKey);
-          ablyChannel.publish("selection", streamPayload).then(() => {
-            log(`Selection published to ${currentPairingId}: ${name}`);
-          }).catch((e) => {
-            const eMsg = e instanceof Error ? e.message : String(e);
-            log(`Ably publish failed: ${eMsg}`);
-          });
+          if (activeTransport === "local" && localBridgeWs && localBridgeWs.readyState === WebSocket.OPEN) {
+            localBridgeWs.send(JSON.stringify({
+              action: "broadcast",
+              pairing_id: currentPairingId,
+              event: "selection",
+              payload: streamPayload
+            }));
+            log(`[Local Bridge] Selection published to ${currentPairingId}: ${name}`);
+          } else if (ablyChannel) {
+            ablyChannel.publish("selection", streamPayload).then(() => {
+              log(`Selection published to ${currentPairingId}: ${name}`);
+            }).catch((e) => {
+              const eMsg = e instanceof Error ? e.message : String(e);
+              log(`Ably publish failed: ${eMsg}`);
+            });
+          }
         }
       }
       if (response.action === "selection-result") {
@@ -1335,33 +1763,20 @@
         }
         const request = pendingRequests.take(response.requestId);
         if (request) {
-          void submitRelayResult({
-            relayUrl,
-            pairingId: currentPairingId,
-            requestId: request.id,
-            data: response.data,
-            platform,
-            ablyChannel
-          });
-          const count = response.selectionCount || 0;
-          log(
-            `Selection returned: ${response.data ? response.data.name : "None selected"}${platform === "figma" ? ` (Figma saw ${count} selected items)` : ""}`
-          );
-        }
-      }
-      if (response.action === "export-result" && platform === "penpot") {
-        const request = pendingRequests.take(response.requestId);
-        if (request) {
-          if (response.error) {
-            void submitRelayResult({
-              relayUrl,
-              pairingId: currentPairingId,
-              requestId: request.id,
-              error: response.error,
-              platform,
-              ablyChannel
-            });
-            log(`Export failed: ${response.error}`);
+          if (activeTransport === "local" && localBridgeWs && localBridgeWs.readyState === WebSocket.OPEN) {
+            localBridgeWs.send(JSON.stringify({
+              action: "broadcast",
+              pairing_id: currentPairingId,
+              event: "result",
+              payload: {
+                id: request.id,
+                requestId: request.id,
+                data: response.data,
+                selectionCount: response.selectionCount,
+                platform
+              }
+            }));
+            log(`[Local Bridge] Selection returned: ${response.data ? response.data.name : "None selected"}`);
           } else {
             void submitRelayResult({
               relayUrl,
@@ -1371,7 +1786,52 @@
               platform,
               ablyChannel
             });
-            log("Export payload transmitted to Miro.");
+            const count = response.selectionCount || 0;
+            log(
+              `Selection returned: ${response.data ? response.data.name : "None selected"}${platform === "figma" ? ` (Figma saw ${count} selected items)` : ""}`
+            );
+          }
+        }
+      }
+      if (response.action === "export-result") {
+        const request = pendingRequests.take(response.requestId);
+        if (request) {
+          if (activeTransport === "local" && localBridgeWs && localBridgeWs.readyState === WebSocket.OPEN) {
+            localBridgeWs.send(JSON.stringify({
+              action: "broadcast",
+              pairing_id: currentPairingId,
+              event: "result",
+              payload: {
+                id: request.id,
+                requestId: request.id,
+                data: response.data,
+                error: response.error,
+                platform
+              }
+            }));
+            log(response.error ? `[Local Bridge] Export failed: ${response.error}` : "[Local Bridge] Export payload transmitted to Miro.");
+          } else {
+            if (response.error) {
+              void submitRelayResult({
+                relayUrl,
+                pairingId: currentPairingId,
+                requestId: request.id,
+                error: response.error,
+                platform,
+                ablyChannel
+              });
+              log(`Export failed: ${response.error}`);
+            } else {
+              void submitRelayResult({
+                relayUrl,
+                pairingId: currentPairingId,
+                requestId: request.id,
+                data: response.data,
+                platform,
+                ablyChannel
+              });
+              log("Export payload transmitted to Miro.");
+            }
           }
         }
       }
@@ -1406,6 +1866,74 @@
       window.addEventListener("pagehide", () => {
         clearInterval(penpotPollInterval);
       });
+    }
+    const clearLogBtn = document.getElementById("clear-log-btn");
+    clearLogBtn?.addEventListener("click", () => {
+      if (logBox) logBox.textContent = "";
+    });
+    if (bridgeAutoConnectToggle) {
+      const isAuto = typeof window !== "undefined" && localStorage.getItem("syncingboard_bridge_auto_connect") === "true";
+      if (!supportsLocalBridge) {
+        bridgeAutoConnectToggle.checked = false;
+        bridgeAutoConnectToggle.disabled = true;
+        if (bridgeAutoConnectToggle.parentElement) {
+          bridgeAutoConnectToggle.parentElement.style.opacity = "0.45";
+          bridgeAutoConnectToggle.parentElement.style.pointerEvents = "none";
+        }
+        if (bridgeDesc) {
+          bridgeDesc.textContent = "Unavailable in Penpot web sandbox (Chrome LNA) \u2014 using Cloud Relay";
+        }
+      } else {
+        bridgeAutoConnectToggle.checked = isAuto;
+        bridgeAutoConnectToggle.addEventListener("change", () => {
+          const checked = bridgeAutoConnectToggle.checked;
+          try {
+            localStorage.setItem("syncingboard_bridge_auto_connect", checked ? "true" : "false");
+          } catch {
+          }
+          if (checked) {
+            log("SyncingBridge auto-connect enabled.");
+            const pId = pairingInput?.value?.trim() || currentPairingId;
+            if (pId && isValidPairingId(pId)) {
+              void connectBridge(false);
+            } else {
+              void checkLocalBridge();
+            }
+          } else {
+            log("SyncingBridge auto-connect disabled. Switching to Cloud Relay (Ably)...");
+            if (activeTransport === "local" && localBridgeWs) {
+              localBridgeWs.onclose = null;
+              localBridgeWs.close();
+              localBridgeWs = null;
+              activeTransport = "none";
+            }
+            const pId = pairingInput?.value?.trim() || currentPairingId;
+            if (pId && isValidPairingId(pId)) {
+              void connectBridge(false);
+            } else {
+              updateStatusUI("disconnected", "DISCONNECTED");
+            }
+          }
+        });
+      }
+    }
+    const companionPortInput = document.getElementById("companion-bridge-port");
+    if (companionPortInput) {
+      companionPortInput.value = getBridgePort();
+      if (!supportsLocalBridge) {
+        companionPortInput.disabled = true;
+        companionPortInput.style.opacity = "0.45";
+      } else {
+        companionPortInput.addEventListener("change", () => {
+          const p = companionPortInput.value.trim() || "4401";
+          try {
+            localStorage.setItem("syncingboard_bridge_port", p);
+            log(`Bridge port configured to ${p}.`);
+            void checkLocalBridge();
+          } catch {
+          }
+        });
+      }
     }
     let savedId = null;
     try {

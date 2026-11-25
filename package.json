@@ -1,6 +1,6 @@
 {
   "name": "syncingboard",
-  "version": "0.17.0",
+  "version": "0.18.0",
   "plan": "community",
   "private": true,
   "packageManager": "yarn@4.13.0",
@@ -10,14 +10,23 @@
   "resolutions": {
     "postcss": "8.5.25",
     "tar": "7.5.22",
-    "undici": "7.29.0",
-    "sharp": "0.35.3",
-    "dompurify": "3.4.13",
-    "js-yaml": "4.3.1"
+    "undici": "^7.30.1",
+    "sharp": "^0.35.4",
+    "dompurify": "^3.4.17",
+    "js-yaml": "^4.3.2",
+    "vite": "^8.1.6",
+    "source-map-js": "^1.2.2",
+    "browserslist": "^4.28.7",
+    "nanoid": "^3.3.18",
+    "postcss-selector-parser": "^6.1.5",
+    "brace-expansion": "^1.1.21",
+    "baseline-browser-mapping": "^2.11.0"
   },
   "scripts": {
     "dev": "node scripts/build-companion.mjs && node scripts/inject-version.mjs && next dev",
     "local": "node scripts/start-local-tunnel.mjs",
+    "local:tauri": "node scripts/start-local-tunnel.mjs --tauri",
+    "tauri:dev": "yarn --cwd tauri-bridge tauri dev",
     "build": "node scripts/build-companion.mjs && node scripts/inject-version.mjs && next build",
     "build:companion": "node scripts/build-companion.mjs",
     "start": "next start",
@@ -33,7 +42,7 @@
     "ably": "^2.24.0",
     "github-slugger": "^2.0.0",
     "mermaid": "^11.16.1",
-    "next": "16.2.11",
+    "next": "16.4.5",
     "next-mdx-remote": "^6.0.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
@@ -50,12 +59,12 @@
     "@types/react-dom": "^19",
     "esbuild": "^0.28.2",
     "eslint": "^9",
-    "eslint-config-next": "16.2.11",
+    "eslint-config-next": "16.4.5",
     "husky": "^9.1.7",
     "jsdom": "^29.1.1",
     "remark-gfm": "^4.0.1",
     "tailwindcss": "^4",
     "typescript": "^5",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.12"
   }
 }

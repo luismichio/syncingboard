@@ -20,6 +20,7 @@ export interface RelayRequestBody {
   pairingId: string;
   platform?: 'figma' | 'penpot';
   action: 'select' | 'export';
+  fileKey?: string;
   shapeId?: string;
   format?: 'svg' | 'png';
   scale?: number;
@@ -189,7 +190,11 @@ function sendRelaySessionSignal(action: 'heartbeat' | 'release' | 'transfer'): v
 }
 
 export function releaseLocalRelaySession(): void {
-  void sendRelaySessionSignal('release');
+  const hadClient = Boolean(globalAblyClient);
+  closeGlobalAblyConnection();
+  if (!hadClient) {
+    void sendRelaySessionSignal('release');
+  }
 }
 
 export function heartbeatRelaySession(): void {
@@ -366,6 +371,121 @@ export async function subscribeRelayLive(
   eventName: string,
   handler: (data: Record<string, unknown>) => void
 ): Promise<() => void> {
+  const isTauriMode = typeof window !== 'undefined' && localStorage.getItem('syncingboard_use_tauri') === 'true';
+
+  // Penpot runs in the browser sandbox (Chrome LNA blocks loopback), so only Figma routes via local Tauri.
+  if (isTauriMode && platform !== 'penpot') {
+    let ws: WebSocket | null = null;
+    let sse: EventSource | null = null;
+    let active = true;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    const port = (typeof window !== 'undefined' && localStorage.getItem('syncingboard_bridge_port')) || '4401';
+
+    const openDirectSocket = () => {
+      if (!active || typeof WebSocket === 'undefined') return;
+      try {
+        const socket = new WebSocket(`ws://localhost:${port}/ws`);
+        ws = socket;
+        socket.onopen = () => {
+          if (!active) {
+            try { socket.close(); } catch {}
+            return;
+          }
+          socket.send(JSON.stringify({
+            action: 'register',
+            pairing_id: pairingId,
+            role: 'target',
+          }));
+        };
+        socket.onmessage = (ev) => {
+          if (!active) return;
+          try {
+            const raw = typeof ev.data === 'string' ? JSON.parse(ev.data) : null;
+            if (raw && (raw.event === eventName || raw.action === eventName) && raw.payload) {
+              handler(raw.payload as Record<string, unknown>);
+            }
+          } catch {}
+        };
+        socket.onclose = () => {
+          if (ws === socket) ws = null;
+          if (active) {
+            retryTimer = setTimeout(openPrimary, 3000);
+          }
+        };
+        socket.onerror = () => {
+          try { socket.close(); } catch {}
+        };
+      } catch {
+        if (active) {
+          retryTimer = setTimeout(openPrimary, 3000);
+        }
+      }
+    };
+
+    const openPrimary = () => {
+      if (!active) return;
+      // 1. Primary: same-origin SSE proxy (/api/bridge/stream) — matches /api/bridge/health & /api/bridge/relay
+      if (typeof EventSource !== 'undefined') {
+        let didOpen = false;
+        try {
+          const streamUrl = `/api/bridge/stream?pairingId=${encodeURIComponent(pairingId)}&event=${encodeURIComponent(eventName)}&port=${encodeURIComponent(port)}`;
+          const es = new EventSource(streamUrl);
+          sse = es;
+          es.onopen = () => {
+            didOpen = true;
+          };
+          es.onmessage = (ev) => {
+            if (!active) return;
+            try {
+              const payload = JSON.parse(ev.data) as Record<string, unknown>;
+              if (payload && typeof payload === 'object') {
+                handler(payload);
+              }
+            } catch {
+              // ignore malformed SSE payloads
+            }
+          };
+          es.onerror = () => {
+            es.close();
+            if (sse === es) sse = null;
+            if (!active) return;
+            if (!didOpen && typeof WebSocket !== 'undefined') {
+              // On hosted Vercel (where /api/bridge/stream can't reach 127.0.0.1), fall back to direct WS
+              openDirectSocket();
+            } else {
+              retryTimer = setTimeout(openPrimary, 3000);
+            }
+          };
+          return;
+        } catch {
+          // Fall through to direct WebSocket
+        }
+      }
+
+      // 2. Secondary: direct loopback WebSocket
+      openDirectSocket();
+    };
+
+    openPrimary();
+
+    return () => {
+      active = false;
+      if (retryTimer) {
+        clearTimeout(retryTimer);
+        retryTimer = null;
+      }
+      if (ws) {
+        ws.onclose = null;
+        try { ws.close(); } catch {}
+        ws = null;
+      }
+      if (sse) {
+        sse.close();
+        sse = null;
+      }
+    };
+  }
+
   const channel = await getAblyConnection(pairingId, platform);
   liveSubscriptionCount += 1;
   relayKeepAlive = true;
@@ -405,7 +525,190 @@ export async function subscribeRelayLive(
   };
 }
 
+async function callLocalTauriRelay(body: RelayRequestBody): Promise<RelayJson> {
+  const port = (typeof window !== 'undefined' && localStorage.getItem('syncingboard_bridge_port')) || '4401';
+  // 1. Primary: relative Next.js backend proxy (/api/bridge/relay)
+  try {
+    const res = await fetch('/api/bridge/relay', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-bridge-port': port,
+      },
+      body: JSON.stringify({ ...body, port }),
+      signal: AbortSignal.timeout(body.timeoutMs || 8000),
+      cache: 'no-store',
+    });
+    if (res.ok) {
+      const payload = (await res.json()) as { ok?: boolean; data?: RelayJson };
+      if (payload && payload.data !== undefined) {
+        return payload.data;
+      }
+    } else {
+      const errData = (await res.json().catch(() => ({}))) as { error?: string };
+      if (errData.error) {
+        throw new Error(errData.error);
+      }
+    }
+  } catch (err: unknown) {
+    if (typeof WebSocket === 'undefined') {
+      throw err;
+    }
+  }
+
+  // 2. Direct WebSocket fallback
+  const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+  const reqId = 'req_' + Math.random().toString(36).slice(2, 9);
+  const timeoutMs = body.timeoutMs || 8000;
+
+  return new Promise<RelayJson>((resolve, reject) => {
+    let resolved = false;
+
+    const cleanup = () => {
+      resolved = true;
+      try {
+        ws.close();
+      } catch {
+        // ignore
+      }
+      clearTimeout(timer);
+    };
+
+    const timer = setTimeout(() => {
+      if (!resolved) {
+        cleanup();
+        reject(new Error(`Local Bridge request timed out after ${timeoutMs / 1000}s.`));
+      }
+    }, timeoutMs);
+
+    ws.onopen = () => {
+      // 1. Register channel
+      ws.send(JSON.stringify({
+        action: 'register',
+        pairing_id: body.pairingId,
+        role: 'target',
+      }));
+
+      // 2. Broadcast command to companion
+      ws.send(JSON.stringify({
+        action: 'broadcast',
+        pairing_id: body.pairingId,
+        event: 'command',
+        payload: {
+          id: reqId,
+          action: body.action,
+          fileKey: body.fileKey,
+          format: body.format,
+          scale: body.scale,
+          shapeId: body.shapeId,
+          client: 'miro',
+        },
+      }));
+    };
+
+    ws.onmessage = (ev) => {
+      if (resolved) return;
+      try {
+        const raw = typeof ev.data === 'string' ? JSON.parse(ev.data) : null;
+        if (!raw) return;
+
+        // Handle broadcasted result event from companion
+        if ((raw.event === 'result' || raw.action === 'result') && raw.payload) {
+          const payload = raw.payload as { id?: string; requestId?: string; data?: RelayJson; error?: string };
+          const responseId = payload.id || payload.requestId;
+          if (!responseId || responseId === reqId) {
+            cleanup();
+            if (payload.error) {
+              reject(new Error(payload.error));
+            } else {
+              resolve(payload.data ?? (payload as unknown as RelayJson));
+            }
+          }
+        }
+      } catch {
+        // ignore
+      }
+    };
+
+    ws.onerror = () => {
+      if (!resolved) {
+        cleanup();
+        reject(new Error('Local Bridge WebSocket connection failed.'));
+      }
+    };
+  });
+}
+
+export interface LocalFigmaExportResult {
+  dataUrl: string;
+  name?: string;
+  width?: number;
+  height?: number;
+}
+
+/**
+ * Exports a Figma node locally via the Figma Companion plugin's `node.exportAsync()`
+ * over the Tauri SyncingBridge (0 Figma REST API calls, 0 Ably, 0 Vercel).
+ * Returns null if Tauri is disabled, unreachable, or the node is not in the currently open Figma file.
+ */
+export async function exportFigmaNodeLocally(
+  pairingId: string,
+  opts: { fileKey?: string; nodeId: string; format: 'png' | 'svg'; scale: number }
+): Promise<LocalFigmaExportResult | null> {
+  if (typeof window === 'undefined' || !pairingId) return null;
+  if (localStorage.getItem('syncingboard_use_tauri') !== 'true') return null;
+
+  try {
+    const res = await callLocalTauriRelay({
+      pairingId,
+      platform: 'figma',
+      action: 'export',
+      fileKey: opts.fileKey,
+      shapeId: opts.nodeId,
+      format: opts.format,
+      scale: opts.scale,
+      timeoutMs: 15_000,
+    });
+    if (res && typeof res === 'object' && !Array.isArray(res)) {
+      const obj = res as Record<string, unknown>;
+      if (typeof obj.dataUrl === 'string' && obj.dataUrl.startsWith('data:')) {
+        return {
+          dataUrl: obj.dataUrl,
+          name: typeof obj.name === 'string' ? obj.name : undefined,
+          width: typeof obj.width === 'number' ? obj.width : undefined,
+          height: typeof obj.height === 'number' ? obj.height : undefined,
+        };
+      }
+    }
+    return null;
+  } catch {
+    // Node not in open file, companion offline, or bridge unreachable -> caller falls back to Figma REST API
+    return null;
+  }
+}
+
 export async function callRelay(body: RelayRequestBody): Promise<RelayJson> {
+  const isTauriMode = typeof window !== 'undefined' && localStorage.getItem('syncingboard_use_tauri') === 'true';
+
+  // Hybrid dual-transport: Figma routes via local Tauri SyncingBridge when enabled,
+  // while Penpot always uses Ably Cloud Relay (avoiding Chrome LNA blocks & cross-talk).
+  if (isTauriMode && body.platform !== 'penpot' && typeof WebSocket !== 'undefined') {
+    try {
+      return await callLocalTauriRelay(body);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const isBridgeConnectionFailure =
+        msg.includes('Local Bridge WebSocket connection failed') ||
+        msg.includes('Failed to connect to local SyncingBridge') ||
+        msg.includes('SyncingBridge is unreachable');
+      if (!isBridgeConnectionFailure) {
+        throw err;
+      }
+      // Transient fallback to Ably Cloud Relay for this call without clearing
+      // the user's syncingboard_use_tauri preference (so Tauri auto-resumes on restart).
+    }
+  }
+
   activeRelayCalls += 1;
   clearIdleCloseTimer();
   try {
@@ -592,29 +895,51 @@ export async function callPenpotMcpTool(
 }
 
 /**
- * Queries local selection inside the active Figma Desktop App via SyncBridge.
+ * Broadcasts sync progress and status notifications to the local SyncingBridge
+ * and companion plugins for real-time visibility.
  */
-export async function callFigmaSelectionTauri(): Promise<{ id: string; name: string; fileKey: string } | null> {
-  if (typeof window === 'undefined' || localStorage.getItem('syncingboard_use_tauri') !== 'true') {
-    return null;
-  }
+export async function broadcastSyncActivity(pairingId: string, message: string): Promise<void> {
+  const isTauriMode = typeof window !== 'undefined' && localStorage.getItem('syncingboard_use_tauri') === 'true';
+  if (!pairingId || !isTauriMode) return;
+  const port = (typeof window !== 'undefined' && localStorage.getItem('syncingboard_bridge_port')) || '4401';
 
   try {
-    const res = await fetch('https://local.syncingboard.com:4401/detect-figma', {
+    const res = await fetch('/api/bridge/relay', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      targetAddressSpace: 'loopback',
-    } as unknown as RequestInit);
-
-    if (!res.ok) return null;
-
-    const payload = (await res.json()) as { error?: string; data?: { id: string; name: string; fileKey: string } | null };
-    return payload.data || null;
+      headers: {
+        'Content-Type': 'application/json',
+        'x-bridge-port': port,
+      },
+      body: JSON.stringify({
+        pairingId,
+        port,
+        action: 'sync-event',
+        message,
+      }),
+      cache: 'no-store',
+    });
+    if (res.ok) return;
   } catch {
-    return null;
+    // Fall through to direct WebSocket broadcast
+  }
+
+  if (typeof WebSocket !== 'undefined') {
+    try {
+      const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+      ws.onopen = () => {
+        ws.send(JSON.stringify({
+          action: 'broadcast',
+          pairing_id: pairingId,
+          event: 'sync-event',
+          payload: { message },
+        }));
+        ws.close();
+      };
+    } catch {
+      // Ignore notification failures
+    }
   }
 }
-
 
 /**
  * Moves the per-user session binding to THIS board (1 active board per Miro

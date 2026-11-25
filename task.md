@@ -1,3 +1,98 @@
+# Task: GitHub Docs-as-Code Text Sync (Phases 1 & 2 — Shared Core + Miro MVP)
+- [x] Phase 1: `src/lib/sync/markdownParser.ts`, `src/lib/sync/markdownCompiler.ts`, `GET /api/github/markdown` (SSRF-guarded, ETag `304`, optional PAT), and unit tests (`markdownParser.test.ts`, `markdownCompiler.test.ts`).
+- [x] Phase 2: `useGitHubDocsImporter.ts`, `GitHubDocsImportPanel.tsx`, `Import → DOCS` sub-tab in Miro (Place Text, Bind Selected, Sync Selected Docs in-place via Miro SDK v2).
+- [x] Verification: `yarn lint`, `yarn test`, and `yarn build`.
+
+---
+
+# Task: Zero-Cloud Local Figma ↔ Miro Pipeline (Parts A & B)
+- [x] Phase 1 (Part A): Local `POST /miro/update-image` in `tauri-bridge/src-tauri/src/lib.rs` (50 MB limit, `reqwest` multipart, `preserveSize` geometry restore + `Retry-After`, Rust unit tests).
+- [x] Phase 2 (Part A): `updateMiroImageViaTauri` in `tauriBridgeClient.ts`, hybrid split batch limits (`src/lib/sync/batchLimits.ts` + tests: 50 local Figma / 3 Penpot / 3 Cloud), wired into `SyncTab.tsx`, `useMiroSync.ts`, `useFigmaImporter.ts`.
+- [x] Phase 3 (Part B): Local `node.exportAsync()` handler in `figma-plugin/code.js` + `runtime.ts` + `exportFigmaNodeLocally()` in `companionRelayClient.ts` with automatic fallback to `/api/figma/render-batch` for closed files.
+- [x] Phase 4: Rebuilt companion bundles, updated `doc/CHANGELOG.md`, and verified `yarn test`, `yarn build`, `yarn lint`, and `cargo check --all-targets`.
+
+---
+
+# Task: Tauri Desktop Bridge — Native WebSocket Broker (`ws://127.0.0.1:4401`)
+
+## Phase 1: Native Rust WebSocket Server (`tauri-bridge/src-tauri/`)
+- [x] Replace self-signed HTTPS server with Axum/Tokio WebSocket listener on `127.0.0.1:4401`.
+- [x] Implement bidirectional relay channels (`/source` and `/target`) for frame selection and image buffers.
+- [x] Implement local companion WebSocket relay handler for Figma & Penpot in Rust.
+- [x] Update Tauri tray app UI to display live connection status (Figma, Miro, Penpot) and broker controls.
+
+## Phase 2: Client-Side Local Transport Adapter (`src/lib/sync/`)
+- [x] Add probe logic in `tauriBridgeClient.ts` and `companionRelayClient.ts` to test `ws://127.0.0.1:4401`.
+- [x] Route selection broadcasting and image export commands to local WebSocket if active.
+- [x] Implement seamless fallback to Ably Cloud Relay if Tauri app is not running.
+
+## Phase 3: Binary Buffer Transfer & Quota Optimization
+- [x] Server-side binary frame relay handler in Rust (`Message::Binary` -> `binary-chunk`); client-side binary chunking deferred (exports currently stream over JSON text frames).
+- [x] Add release-hook (`releaseLocalRelaySession`) to release cloud slot lease when `useTauri === true`.
+
+## Phase 4: Unit Testing, Hardening & Verification
+- [x] Unit tests for local WebSocket protocol, auto-fallback state machine, and port/timeout SSRF validation (`tauriBridgeClient.test.ts`, `bridgeValidation.test.ts`).
+- [x] Hardening: strict port/timeout validation in `/api/bridge/*`, Rust CORS/PNA origin allowlist, immediate WS disconnect on pause, self-echo suppression, empty-channel pruning, and `SettingsTab` SSR hydration fix.
+- [x] Verify `yarn test`, `cargo test`, `yarn build`, and `tauri-bridge` `yarn build`.
+
+---
+
+# Task: Deselect Items from Sync List (Local Selection Exclusion)
+
+## Phase 1: Hook State & Filtering
+- [x] Add `deselectedIds: string[]` state in `src/app/miro-plugin/useMiroPlugin.ts`.
+- [x] Auto-reset `deselectedIds` when selection identity changes.
+- [x] Filter `selectedItems` into `activeSelectedItems` and pass to `useMiroSync`.
+- [x] Expose `handleDeselectGroup` and `deselectedIds`.
+
+## Phase 2: Component UI in SyncTab
+- [x] Add `onRemoveGroup` callback to `SyncTabProps` in `src/app/miro-plugin/components/SyncTab.tsx`.
+- [x] Render Lucide-style "✕" button in group card header before platform badge.
+- [x] Connect `onRemoveGroup` in `src/app/miro-plugin/page.tsx`.
+
+## Phase 3: FigJam Mirror Parity
+- [x] Add `deselectedIds` and `handleDeselectGroup` to `src/app/figjam-mirror/useFigJamPlugin.ts`.
+- [x] Connect `onRemoveGroup` in `src/app/figjam-mirror/page.tsx`.
+
+## Phase 4: Unit Testing & Build Verification
+- [x] Create `src/app/miro-plugin/__tests__/deselectSync.test.ts` (5/5 unit tests passing).
+- [x] Verify full test suite (26/26 test files, 182/182 unit tests passing).
+- [x] Verify Next.js production build (`yarn build` succeeds with 0 errors).
+
+---
+
+# Task: Companion HTML Refactor — Shared Tested Core + Single Bundle
+
+## Phase 1: Shared Core Extraction (`src/companion-core/`)
+- [x] Create `src/companion-core/types.ts` with strict TypeScript types (No `any`).
+- [x] Create `src/companion-core/validation.ts` for pairingId, tabId, and platform validation.
+- [x] Create `src/companion-core/protocol.ts` for host-companion postMessage & Ably message codecs.
+- [x] Create `src/companion-core/token.ts` for `/api/relay/companion/session` token fetch & error handling.
+- [x] Create `src/companion-core/session.ts` for session state machine & release beacon.
+- [x] Create `src/companion-core/relay.ts` for Ably lifecycle, subscriptions, and event handlers.
+- [x] Create `src/companion-core/theme.ts` for host theme synchronization.
+
+## Phase 2: Unit Test Suite (`src/companion-core/__tests__/`)
+- [x] Create `validation.test.ts` for pairingId and protocol validation.
+- [x] Create `protocol.test.ts` for message shapes and serialization.
+- [x] Create `session.test.ts` for state machine transitions (409, 429, Standby, Transfer).
+- [x] Create `token.test.ts` for token cache and authUrl payload generation.
+- [x] Run `yarn test` and ensure all unit tests pass (170/170 passing across 24 suites).
+
+## Phase 3: Bundler & Build Pipeline (`scripts/build-companion.mjs`)
+- [x] Add `esbuild` to `devDependencies` in `package.json`.
+- [x] Create `src/companion-core/figma-entry.ts` and `src/companion-core/penpot-entry.ts`.
+- [x] Create `src/companion-core/companion-template.html` with `doc/design-system.md` tokens.
+- [x] Create `scripts/build-companion.mjs` to bundle TS and inject into `public/*-companion-ui.html`.
+- [x] Update `package.json` build scripts to include companion bundle generation.
+
+## Phase 4: Generation, Verification & Design System Parity
+- [x] Generate `public/figma-companion-ui.html` and `public/penpot-companion-ui.html`.
+- [x] Verify design system tokens (`--bg-page`, `--bg-card`, `--border-card`, `--accent`, `8px` radius).
+- [x] Run `yarn build` and full test suite.
+
+---
+
 # Task: Create Design System Architecture & UI Inconsistency Audit (`doc/design-system.md`)
 
 ## Phase 1: Audit & Token Mapping

@@ -59,6 +59,7 @@ next-env.d.ts
 # Agents
 AGENTS.md
 CLAUDE.md
+.agents/plugins/penpot-mcp/
 
 # Planning docs
 /doc/backlog.md

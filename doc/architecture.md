@@ -46,7 +46,7 @@ SyncingBoard is deliberately built as a stateless proxy engine for key technical
 While statelessness delivers maximum privacy and zero infrastructure overhead, it involves deliberate technical trade-offs:
 
 * **Client-Scoped Sessions:** OAuth tokens live in client-side Miro board metadata; clearing browser data or moving to an un-paired browser requires re-authenticating.
-* **Payload Constraints:** Without server-side cloud storage (S3), image transfers travel directly via serverless HTTP response bodies and are subject to host payload limits (4.5MB on Vercel).
+* **Payload Constraints:** Without server-side cloud storage (S3), cloud-mode image transfers travel via serverless HTTP response bodies and are subject to host payload limits (4.5MB on Vercel). Running the optional **SyncingBridge (Local)** desktop app bypasses Vercel completely with a **50MB** direct Rust → Miro `PATCH` pipeline and local Figma `exportAsync()`.
 * **No Historical Sync Activity:** SyncingBoard retains no historical user activity logs, past sync dashboards, or permanent audit histories.
 
 ---
@@ -55,12 +55,12 @@ While statelessness delivers maximum privacy and zero infrastructure overhead, i
 
 | Module | Status | Availability | What it covers |
 |---|---|---|---|
-| **[1. Source Adapters](./architecture/sources.md)** | stable / draft | **Figma & Penpot (LIVE)**; Lovable, Stitch, UXPin, Framer, Adobe UXP *(Planned)* | Cloud REST & Penpot event-driven WASM relay; future source specs. |
-| **[2. Target Adapters & Metadata](./architecture/targets.md)** | stable / design | **Miro (LIVE)**; Mural, MS Whiteboard *(Planned)* | Miro SDK v2, REST PATCH, stateless metadata signatures (`[FigmaSync|...]`, `[PenpotSync|...]`), `preserveSize`, `replaceSelectedWidget`. |
-| **[3. Selection Detection & Relay](./architecture/selection-and-relay.md)** | stable | **LIVE** | Real-time Ably WebSocket selection stream, zero-Redis selection payloads, `companionRelayClient.ts`, secure pairing IDs. |
-| **[4. Security & Rate Limits](./architecture/security-and-limits.md)** | stable | **LIVE** | Sliding window rate limiting (`@upstash/ratelimit`), token hashing (`tok:sha256(token)`), Redis `SETEX` 300s OAuth store. |
-| **[5. Testing & Quality Assurance](./architecture/testing.md)** | stable | **LIVE** | 132 automated Vitest tests across 18 files, zero-network mocking strategy, and CI pipeline setup. |
-| **[6. Data Transport & Infrastructure Costs](./architecture/infrastructure-and-costs.md)** | stable | **LIVE** | Vercel 4.5MB limits, byte travel, self-host cost matrix, zero cloud rendering costs, Tauri payload extender. |
+| **[1. Source Adapters](./architecture/sources.md)** | stable / draft | **Figma & Penpot (LIVE)**; Lovable, Stitch, UXPin, Framer, Adobe UXP *(Planned)* | Cloud REST, local Figma `exportAsync()`, & Penpot event-driven WASM relay; future source specs. |
+| **[2. Target Adapters & Metadata](./architecture/targets.md)** | stable / design | **Miro & FigJam (LIVE)**; Mural, MS Whiteboard *(Planned)* | Miro SDK v2, REST PATCH (cloud & local Rust), FigJam mirror, stateless metadata signatures (`[FigmaSync|...]`, `[PenpotSync|...]`), `preserveSize`, `replaceSelectedWidget`. |
+| **[3. Selection Detection & Relay](./architecture/selection-and-relay.md)** | stable | **LIVE** | Hybrid dual-transport: local Tauri WebSocket/SSE (`SyncingBridge`) for Figma Desktop + Ably Cloud Relay for Penpot Web & non-Tauri users, live auto-detect, configurable global shortcuts, secure pairing IDs. |
+| **[4. Security & Rate Limits](./architecture/security-and-limits.md)** | stable | **LIVE** | Sliding window rate limiting (`@upstash/ratelimit`), hybrid batch limits (3 Cloud / 50 Local Figma + 3 Penpot), token hashing (`tok:sha256(token)`), Redis `SETEX` 300s OAuth store, loopback origin allowlist & port validation. |
+| **[5. Testing & Quality Assurance](./architecture/testing.md)** | stable | **LIVE** | 198 automated Vitest tests across 29 files, Rust unit tests, zero-network mocking strategy, and CI pipeline setup. |
+| **[6. Data Transport & Infrastructure Costs](./architecture/infrastructure-and-costs.md)** | stable | **LIVE** | Vercel 4.5MB limits, 50MB local SyncingBridge bypass, byte travel, self-host cost matrix, zero cloud rendering costs. |
 | **[7. MCP Transport Roadmap](./architecture/mcp-roadmap.md)** | design | **PLANNED** | Speculative MCP client & server specifications for AI agents. |
 | **[8. Historical Archives](./architecture/archive/chromium-loopback.md)** | historical | Archived | [Chromium Loopback & Sandboxing](./architecture/archive/chromium-loopback.md) and [Architecture Evolution Log](./architecture/archive/architecture-evolution.md). |
 
@@ -75,7 +75,7 @@ graph TD
   agents["AI Agents / Automation<br/>(Claude Desktop, Cursor, pi, scripts)"]
   subgraph engine["SyncingBoard Core Engine"]
     direction LR
-    sa["Source Adapters<br/>(Figma / Penpot / etc.)"]
+    sa["Source Adapters<br/>(Figma / Penpot / GitHub Docs)"]
     ta["Target Adapters<br/>(Miro / Mural / etc.)"]
     mcp["MCP Client (Planned)"]
     lovable["Lovable<br/>MCP HTTP"]

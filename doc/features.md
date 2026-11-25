@@ -109,6 +109,27 @@ Pairing ID:  [ ???????????????? ]  [ Reveal ]  [ Copy ]
 
 ---
 
+## SyncingBridge (Optional Zero-Cloud Local Mode)
+
+For power users running **Figma Desktop** and **Miro Desktop**, the optional **SyncingBridge** (Tauri v2) desktop app replaces the cloud relay with a local Rust broker on `localhost:4401`:
+
+* **Zero-Cloud Figma Pipeline:** Exports open Figma frames locally via `node.exportAsync()` (0 Figma REST API calls, bypassing Figma's Starter 20/month REST cap) and uploads directly to Miro REST API v2 from Rust (0 Vercel calls, 50 MB payload limit).
+* **Hybrid Dual-Transport:** Figma Desktop runs locally over SyncingBridge (up to **50 frames per batch**), while Penpot Web automatically uses Ably Cloud Relay (up to **3 frames per batch**) side by side with zero cross-talk.
+* **Live Figma Auto-Detect:** Clicking any frame in Figma Desktop updates Miro's **Import → Figma** tab automatically in real time — no manual "Detect" click needed.
+* **Configurable Global Shortcuts:** Trigger **Import** (`Ctrl/Cmd+Shift+I`), **Replace** (`Ctrl/Cmd+Shift+R`), or **Sync** (`Ctrl/Cmd+Shift+S`) directly from Figma or Miro without touching the sidebar. Click any shortcut box in **SyncingBridge → Settings** to record custom bindings.
+
+---
+
+## GitHub Docs-as-Code Text Sync (Miro, FigJam & Penpot)
+
+Keep product specs, architecture notes, and release documentation in sync between GitHub Markdown files and your **Miro**, **FigJam**, and **Penpot** boards:
+
+* **Deterministic Section & Branch Picker:** Paste any GitHub `.md` URL (public or private) in **Import → DOCS** (Miro & FigJam) or the Penpot Companion **DOCS** tab to parse headings (`#`–`######`) into selectable sections and switch repository **branches** (including slash-containing branch names).
+* **In-Place Updates, Section/Branch Switching & Quick Links:** Select any bound GitHub widget on Miro or FigJam to refresh it from the unified **Sync** tab — preserving position, size, connectors, and comments — or retarget it to another **branch** or **heading** using the inline dropdowns. In Penpot, use the **Selected Bound Doc** card (with **OPEN** / **COPY** GitHub deep links, inline Branch & Section switchers, and **Sync Selected**) or click **Sync All Bound Docs** to update bound `Text` shapes in-place while preserving text box dimensions and `TextShape.getRange` typography.
+* **Private Repo OAuth:** Connect your GitHub account once in **Settings → GitHub Status** (stateless OAuth stored only in your browser) to read authorized private repositories without pasting Personal Access Tokens.
+
+---
+
 ## Explore More Documentation
 
 * [Quickstart Setup Guide](/docs/setup) - Learn how to set up SyncingBoard in 2 minutes.
