@@ -64,14 +64,26 @@ async function issueToken(input: TokenRequestInput): Promise<NextResponse> {
     const tabId = input.tabId ?? '';
     const binding = await getCompanionSession(input.pairingId);
     if (planCompanionBinding(binding, tabId) === 'conflict') {
-      return NextResponse.json(
-        {
-          error: 'companion_conflict',
-          companionConflict: true,
-          activeTabId: binding?.tabId ?? '',
-        },
-        { status: 409 }
-      );
+      if (tabId === 'syncingbridge' && input.platform === 'figma') {
+        // SyncingBridge replaces the Figma Companion's cloud Ably socket when Figma links locally.
+        if (binding?.tabId) {
+          await publishCompanionEvent(
+            input.pairingId,
+            binding.platform,
+            'companion_transferred',
+            binding.tabId
+          ).catch(() => undefined);
+        }
+      } else {
+        return NextResponse.json(
+          {
+            error: 'companion_conflict',
+            companionConflict: true,
+            activeTabId: binding?.tabId ?? '',
+          },
+          { status: 409 }
+        );
+      }
     }
     // A1: hard companion cap (180 default) with A2 orphan eviction —
     // never evicts a pairing with a live Miro lease.
