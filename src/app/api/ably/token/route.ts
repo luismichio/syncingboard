@@ -157,17 +157,61 @@ async function issueToken(input: TokenRequestInput): Promise<NextResponse> {
   }
 }
 
+const ALLOWED_CORS_ORIGINS = new Set([
+  'tauri://localhost',
+  'http://tauri.localhost',
+  'https://tauri.localhost',
+  'https://www.syncingboard.com',
+  'https://syncingboard.com',
+  'http://localhost:3000',
+  'http://localhost:1420',
+  'null',
+]);
+
+function corsHeadersFor(request: Request): Record<string, string> {
+  const origin = request.headers.get('origin') || '';
+  const allowOrigin =
+    ALLOWED_CORS_ORIGINS.has(origin) ||
+    /^https:\/\/[a-z0-9-]+\.(syncingboard\.com|protokoba\.com|vercel\.app)$/i.test(origin)
+      ? origin
+      : '*';
+  return {
+    'Access-Control-Allow-Origin': allowOrigin,
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    Vary: 'Origin',
+  };
+}
+
+function withCors(request: Request, response: NextResponse): NextResponse {
+  const headers = corsHeadersFor(request);
+  for (const [k, v] of Object.entries(headers)) {
+    response.headers.set(k, v);
+  }
+  return response;
+}
+
+export async function OPTIONS(request: Request) {
+  return new NextResponse(null, {
+    status: 204,
+    headers: corsHeadersFor(request),
+  });
+}
+
 async function postHandler(request: Request) {
   try {
     const body = await request.json().catch(() => null);
     const input = parseInput(isRecord(body) ? body : {});
     if (!input) {
-      return NextResponse.json({ error: 'Invalid pairingId or Miro session ID.' }, { status: 400 });
+      return withCors(
+        request,
+        NextResponse.json({ error: 'Invalid pairingId or Miro session ID.' }, { status: 400 })
+      );
     }
-    return await issueToken(input);
+    return withCors(request, await issueToken(input));
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to generate Ably token.';
-    return NextResponse.json({ error: message }, { status: 500 });
+    return withCors(request, NextResponse.json({ error: message }, { status: 500 }));
   }
 }
 
@@ -184,12 +228,15 @@ async function getHandler(request: Request) {
       tabId: searchParams.get('tabId'),
     });
     if (!input) {
-      return NextResponse.json({ error: 'Invalid pairingId or Miro session ID.' }, { status: 400 });
+      return withCors(
+        request,
+        NextResponse.json({ error: 'Invalid pairingId or Miro session ID.' }, { status: 400 })
+      );
     }
-    return await issueToken(input);
+    return withCors(request, await issueToken(input));
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to generate Ably token.';
-    return NextResponse.json({ error: message }, { status: 500 });
+    return withCors(request, NextResponse.json({ error: message }, { status: 500 }));
   }
 }
 
