@@ -85,8 +85,9 @@ return;
     if (!miro) return;
     const adapter = new MiroAdapter(miro.board);
 
-    // Get a fresh Miro token right before syncing — the one from mount may have expired
-    const freshMiroToken = miroToken || await getValidToken('miro');
+    // Always check getValidToken() first so expired React state triggers silent refresh
+    const freshMiroToken = (await getValidToken('miro')) || miroToken;
+    const freshFigmaToken = (await getValidToken('figma')) || figmaToken;
     if (!freshMiroToken) {
       setIsSyncing(false);
       setSyncStatus('Miro token unavailable. Please reconnect Miro.');
@@ -336,7 +337,7 @@ return;
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${figmaToken}`,
+                'Authorization': `Bearer ${freshFigmaToken}`,
               },
               body: JSON.stringify({ fileKey, nodeIds, format, scale }),
             });
@@ -574,7 +575,7 @@ throw new Error(communityMessage);
             headers: {
               'Content-Type': 'application/json',
               'Authorization': `Bearer ${freshMiroToken}`,
-              ...(figmaToken ? { 'X-Figma-Token': figmaToken } : {}),
+              ...(freshFigmaToken ? { 'X-Figma-Token': freshFigmaToken } : {}),
             },
             body: JSON.stringify({
               ...miroUpdatePayload,

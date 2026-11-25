@@ -179,15 +179,36 @@ export function useAuthTokens(isInitMode: boolean | null) {
   useEffect(() => {
     if (isInitMode !== false) return;
 
-    // Proactive keep-alive: silently refresh tokens every 25 minutes
-    // so they never hit the 5-minute expiry buffer unexpectedly.
-    // This keeps Vercel instances warm and avoids 7s timeout races.
-    const keepAliveId = setInterval(async () => {
+    const isFigJamMirror =
+      typeof window !== 'undefined' &&
+      window.location?.pathname?.startsWith('/figjam-mirror');
+
+    let lastRefreshCheckAt = 0;
+    const refreshAllTokens = async () => {
+      const now = Date.now();
+      if (now - lastRefreshCheckAt < 10_000) return;
+      lastRefreshCheckAt = now;
       const freshFigma = await getValidToken('figma');
-      const freshMiro = await getValidToken('miro');
+      const freshMiro = isFigJamMirror ? null : await getValidToken('miro');
+      const freshGithub = await getValidToken('github');
       if (freshFigma !== null) setFigmaToken(freshFigma);
       if (freshMiro !== null) setMiroToken(freshMiro);
+      if (freshGithub !== null) setGithubToken(freshGithub);
+    };
+
+    // Proactive keep-alive: silently refresh tokens every 25 minutes
+    // so they never hit the 5-minute expiry buffer unexpectedly.
+    const keepAliveId = setInterval(() => {
+      void refreshAllTokens();
     }, KEEPALIVE_INTERVAL_MS);
+
+    // Also refresh on tab focus / wake from laptop sleep (setInterval pauses while sleeping)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        void refreshAllTokens();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     const syncChannel = new BroadcastChannel('figma_miro_sync');
     const oauthChannel = new BroadcastChannel('oauth_callback');
@@ -207,6 +228,9 @@ export function useAuthTokens(isInitMode: boolean | null) {
       }
       if (tokenData.miroToken === null || typeof tokenData.miroToken === 'string') {
         setMiroToken(tokenData.miroToken ?? null);
+      }
+      if (tokenData.githubToken === null || typeof tokenData.githubToken === 'string') {
+        setGithubToken(tokenData.githubToken ?? null);
       }
       setTokensLoading(false);
     };
@@ -273,6 +297,7 @@ export function useAuthTokens(isInitMode: boolean | null) {
 
     return () => {
       clearInterval(keepAliveId);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       syncChannel.close();
       oauthChannel.close();
       window.removeEventListener('message', handlePopupMessage);

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { isTokenExpiring, saveToken, getToken, clearToken, TokenData } from './tokens';
+import { isTokenExpiring, saveToken, getToken, clearToken, getValidToken, TokenData } from './tokens';
 
 describe('tokens helper tests', () => {
   beforeEach(() => {
@@ -92,6 +92,58 @@ describe('tokens helper tests', () => {
       const afterClear = await getToken('github');
       expect(afterClear).toBeNull();
       expect(miroSet).not.toHaveBeenCalled();
+    });
+
+    it('deduplicates concurrent getValidToken refreshes (single-flight lock for rotating refresh tokens)', async () => {
+      const store = new Map<string, string>();
+      const mockStorage = {
+        getItem: (k: string) => store.get(k) ?? null,
+        setItem: (k: string, v: string) => { store.set(k, v); },
+        removeItem: (k: string) => { store.delete(k); },
+      };
+      Object.defineProperty(globalThis, 'localStorage', { value: mockStorage, configurable: true, writable: true });
+      Object.defineProperty(globalThis, 'window', {
+        value: {
+          location: { origin: 'http://localhost:3000', pathname: '/figjam-mirror' },
+        },
+        configurable: true,
+        writable: true,
+      });
+
+      const expiringToken: TokenData = {
+        accessToken: 'old_access',
+        refreshToken: 'single_use_rt_1',
+        expiresAt: 1000000000000 + 60_000, // within 5m buffer
+      };
+      await saveToken('miro', expiringToken);
+
+      const origFetch = globalThis.fetch;
+      const fetchMock = vi.fn<typeof fetch>(async () =>
+        new Response(
+          JSON.stringify({
+            accessToken: 'fresh_access_2',
+            refreshToken: 'single_use_rt_2',
+            expiresAt: 1000000000000 + 3600_000,
+          }),
+          { status: 200 }
+        )
+      );
+      globalThis.fetch = fetchMock;
+
+      try {
+        const [t1, t2, t3] = await Promise.all([
+          getValidToken('miro'),
+          getValidToken('miro'),
+          getValidToken('miro'),
+        ]);
+        expect(t1).toBe('fresh_access_2');
+        expect(t2).toBe('fresh_access_2');
+        expect(t3).toBe('fresh_access_2');
+        // All 3 concurrent callers MUST share a single POST /api/oauth/refresh call
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+      } finally {
+        globalThis.fetch = origFetch;
+      }
     });
   });
 });

@@ -14,13 +14,14 @@ async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: numbe
   }
 }
 
-type Platform = 'figma' | 'miro';
+type Platform = 'figma' | 'miro' | 'github';
 
 function parsePlatform(raw: unknown): Platform | null {
   if (!raw || typeof raw !== 'object') return null;
   const obj = raw as Record<string, unknown>;
   if (obj.platform === 'figma') return 'figma';
   if (obj.platform === 'miro') return 'miro';
+  if (obj.platform === 'github') return 'github';
   return null;
 }
 
@@ -79,6 +80,63 @@ async function handler(request: Request) {
       if (!accessToken) {
         return NextResponse.json(
           { error: 'Figma token refresh response is missing access_token' },
+          { status: 502 }
+        );
+      }
+
+      const expiresAt = Date.now() + expiresIn * 1000;
+      return NextResponse.json({
+        accessToken,
+        refreshToken: returnedRefreshToken,
+        expiresAt,
+      });
+    }
+
+    if (platform === 'github') {
+      const githubClientId = process.env.GITHUB_CLIENT_ID;
+      const githubClientSecret = process.env.GITHUB_CLIENT_SECRET;
+
+      if (!githubClientId || !githubClientSecret) {
+        return NextResponse.json(
+          { error: 'GitHub credentials are not configured on the server.' },
+          { status: 500 }
+        );
+      }
+
+      const response = await fetchWithTimeout('https://github.com/login/oauth/access_token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          Accept: 'application/json',
+        },
+        body: new URLSearchParams({
+          client_id: githubClientId,
+          client_secret: githubClientSecret,
+          refresh_token: refreshToken,
+          grant_type: 'refresh_token',
+        }).toString(),
+      }, PROVIDER_TIMEOUT_MS);
+
+      const data: unknown = await response.json();
+      const obj = (data && typeof data === 'object') ? (data as Record<string, unknown>) : {};
+
+      if (!response.ok || typeof obj.error === 'string') {
+        const message =
+          typeof obj.error_description === 'string'
+            ? obj.error_description
+            : typeof obj.error === 'string'
+              ? obj.error
+              : 'GitHub token refresh failed';
+        return NextResponse.json({ error: message }, { status: response.ok ? 401 : response.status });
+      }
+
+      const accessToken = typeof obj.access_token === 'string' ? obj.access_token : null;
+      const returnedRefreshToken = typeof obj.refresh_token === 'string' ? obj.refresh_token : refreshToken;
+      const expiresIn = typeof obj.expires_in === 'number' && obj.expires_in > 0 ? obj.expires_in : 8 * 3600;
+
+      if (!accessToken) {
+        return NextResponse.json(
+          { error: 'GitHub token refresh response is missing access_token' },
           { status: 502 }
         );
       }

@@ -202,7 +202,7 @@ export function useMiroPlugin(propagate: boolean = false, preserveSize: boolean 
 
       // Now sync each adopted widget with the new image content
       const boardInfo = await miro.board.getInfo();
-      const freshMiroToken = miroToken || await getValidToken('miro');
+      const freshMiroToken = (await getValidToken('miro')) || miroToken;
 
       if (!freshMiroToken) {
         updateSyncStatus('Miro token unavailable. Please reconnect Miro.', 'error');
@@ -214,7 +214,8 @@ export function useMiroPlugin(propagate: boolean = false, preserveSize: boolean 
       let dataUrl: string | null = null;
 
       if (platform === 'figma') {
-        if (!figmaToken) {
+        const freshFigmaToken = (await getValidToken('figma')) || figmaToken;
+        if (!freshFigmaToken) {
           throw new Error('Figma token missing. Please connect Figma in Settings.');
         }
 
@@ -223,7 +224,7 @@ export function useMiroPlugin(propagate: boolean = false, preserveSize: boolean 
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${figmaToken}`,
+            'Authorization': `Bearer ${freshFigmaToken}`,
           },
           body: JSON.stringify({ fileKey, nodeIds: [nodeId], format, scale }),
         });

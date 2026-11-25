@@ -22,6 +22,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Security
 - **Dependency Security Upgrades (83 Dependabot Alerts Resolved)** — upgraded `next` & `eslint-config-next` (`16.4.5`), `undici` (`7.30.2`), `vite` (`8.3.8` root / `6.4.6` `tauri-bridge`), `vitest` & `@vitest/mocker` (`4.1.12`), `dompurify` (`3.5.0`), `sharp` (`0.35.5`), `js-yaml` (`4.3.2`), `nanoid` (`3.3.20`), `source-map-js` (`1.2.4`), `browserslist` (`4.29.6`), `postcss-selector-parser` (`6.1.6`), `brace-expansion` (`1.1.22`), `baseline-browser-mapping` (`2.11.39`), and Rust `rustls` (`0.23.46`).
 
+### Fixed
+- **OAuth Token Durability (Miro, Figma & GitHub Re-Auth Prevention)** — added `'github'` refresh support to `POST /api/oauth/refresh` (fixing 8-hour GitHub App disconnects), added in-memory single-flight + cross-tab Web Locks (`navigator.locks`) deduplication + `BroadcastChannel` sync in `src/lib/tokens.ts` (preventing concurrent tabs from invalidating Miro's single-use rotating refresh tokens), fixed `useMiroSync.ts` / `useMiroPlugin.ts` / `useFigmaImporter.ts` to always call `getValidToken()` before falling back to React state, added `visibilitychange` wake-from-sleep refresh in `useAuthTokens.ts`, and raised `RATE_LIMIT_COMMUNITY_OAUTH_REFRESH_PER_MIN` from `3` to `10`.
+
 ## [0.17.2] - 2026-08-16
 
 ### Added

@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
+import { getValidToken } from '@/lib/tokens';
 import { parseFigmaUrl } from '@/lib/sync/figmaUrlParser';
 import { decodeHtmlEntities } from '@/lib/decodeHtmlEntities';
 import { MiroAdapter } from './MiroAdapter';
@@ -38,11 +39,12 @@ export function useFigmaImporter(
         nodeId: parsed.nodeId,
         name: 'Loading...',
       });
-      if (figmaToken) {
+      const freshFigmaToken = (await getValidToken('figma')) || figmaToken;
+      if (freshFigmaToken) {
         try {
           const res = await fetch(`/api/figma/node-info?fileKey=${parsed.fileKey}&nodeId=${parsed.nodeId}`, {
             headers: {
-              Authorization: `Bearer ${figmaToken}`,
+              Authorization: `Bearer ${freshFigmaToken}`,
             },
           });
           if (res.ok) {
@@ -150,11 +152,12 @@ export function useFigmaImporter(
 
       if (!dataUrl) {
         // Fallback: render-batch cloud endpoint (for closed files or non-Tauri sessions)
+        const freshFigmaToken = (await getValidToken('figma')) || figmaToken;
         const batchRes = await fetch('/api/figma/render-batch', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${figmaToken}`,
+            'Authorization': `Bearer ${freshFigmaToken}`,
           },
           body: JSON.stringify({
             fileKey: figmaNodeInfo.fileKey,
@@ -202,7 +205,8 @@ export function useFigmaImporter(
         // Non-blocking background registration of binary File resource on Miro backend
         // so that right-clicking and downloading the image from Miro uses the frame's actual name.
         // After the PATCH, re-assert the widget title via SDK — same pattern as sync/replace.
-        if (miroToken) {
+        const freshMiroToken = (await getValidToken('miro')) || miroToken;
+        if (freshMiroToken) {
           const registerImage = async () => {
             try {
               const boardInfo = await miro.board.getInfo();
@@ -218,14 +222,14 @@ export function useFigmaImporter(
               };
               let patchRes: Response | null = null;
               if (isTauriMode) {
-                patchRes = await updateMiroImageViaTauri(updatePayload, miroToken);
+                patchRes = await updateMiroImageViaTauri(updatePayload, freshMiroToken);
               }
               if (!patchRes) {
                 patchRes = await fetch('/api/miro/update-image', {
                   method: 'POST',
                   headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${miroToken}`,
+                    'Authorization': `Bearer ${freshMiroToken}`,
                   },
                   body: JSON.stringify({ ...updatePayload, platform: 'figma' }),
                 });
