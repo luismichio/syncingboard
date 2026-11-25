@@ -18,7 +18,11 @@ import {
   MiroPluginTab,
 } from '@/app/miro-plugin/types';
 import { releaseLocalRelaySession } from '@/lib/sync/companionRelayClient';
-import { notifyTauriMiroConnect, probeTauriBridge } from '@/lib/sync/tauriBridgeClient';
+import {
+  getLastBridgeProbeDiagnostics,
+  notifyTauriMiroConnect,
+  probeTauriBridge,
+} from '@/lib/sync/tauriBridgeClient';
 
 const MAX_SCALE = PLAN === 'community' ? 2 : 4;
 const AVAILABLE_SCALES = Array.from({ length: MAX_SCALE }, (_, i) => i + 1);
@@ -115,7 +119,11 @@ export default function FigJamPluginPage() {
         releaseLocalRelaySession();
         void notifyTauriMiroConnect();
       } else {
-        alert('SyncingBridge desktop app is not running on 127.0.0.1:4401. Please launch SyncingBridge first.');
+        const diag = getLastBridgeProbeDiagnostics();
+        const details = diag.length > 0 ? `\n\nDiagnostics:\n${diag.join('\n')}` : '';
+        alert(
+          `Could not reach SyncingBridge on localhost:4401 or 127.0.0.1:4401. Make sure SyncingBridge is running.${details}`
+        );
       }
     }
   };
