@@ -34,6 +34,7 @@ let globalAblyClient: Ably.Realtime | null = null;
 let globalAblyChannel: Ably.RealtimeChannel | null = null;
 let currentConnectedPairingId: string | null = null;
 let currentConnectedPlatform: 'figma' | 'penpot' | null = null;
+let pendingAblyConnect: { key: string; promise: Promise<Ably.RealtimeChannel> } | null = null;
 let activeRelayCalls = 0;
 let relayKeepAlive = false;
 let liveSubscriptionCount = 0;
@@ -286,7 +287,13 @@ async function getAblyConnection(
     return globalAblyChannel;
   }
 
-  closeGlobalAblyConnection();
+  const connectKey = `${prefix}:${pairingId}`;
+  if (pendingAblyConnect && pendingAblyConnect.key === connectKey) {
+    return pendingAblyConnect.promise;
+  }
+
+  const promise = (async () => {
+    closeGlobalAblyConnection();
 
     const identityQuery =
       relayUserIdHash && relayBoardId
@@ -353,8 +360,16 @@ async function getAblyConnection(
     });
   });
 
-  startSessionHeartbeat();
-  return globalAblyChannel;
+    startSessionHeartbeat();
+    return globalAblyChannel;
+  })().finally(() => {
+    if (pendingAblyConnect?.key === connectKey) {
+      pendingAblyConnect = null;
+    }
+  });
+
+  pendingAblyConnect = { key: connectKey, promise };
+  return promise;
 }
 
 /**
@@ -375,8 +390,8 @@ export async function subscribeRelayLive(
   const isTauriMode = typeof window !== 'undefined' && localStorage.getItem('syncingboard_use_tauri') === 'true';
 
   // Penpot runs in the browser sandbox (Chrome LNA blocks loopback), so only Figma routes via local Tauri.
-  // When SyncingBridge is linked via the Ably Control Channel ('ably-bridge'), fall through to Ably below.
-  if (isTauriMode && platform !== 'penpot' && getActiveBridgeTransport() !== 'ably-bridge') {
+  // Only use local SSE/WS when transport is confirmed 'local'; 'ably-bridge' falls through to Ably below.
+  if (isTauriMode && platform !== 'penpot' && getActiveBridgeTransport() === 'local') {
     let ws: WebSocket | null = null;
     let sse: EventSource | null = null;
     let active = true;
