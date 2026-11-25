@@ -111,13 +111,15 @@ export default function FigJamPluginPage() {
       setFigmaConnected(false);
       localStorage.setItem('syncingboard_use_tauri', 'false');
     } else {
-      const health = await probeTauriBridge(2000);
+      const health = await probeTauriBridge(2000, pairingId || undefined);
       if (health && health.status === 'ok') {
         setUseTauri(true);
         setFigmaConnected(health.figmaConnected === true);
         localStorage.setItem('syncingboard_use_tauri', 'true');
-        releaseLocalRelaySession();
-        void notifyTauriMiroConnect();
+        if (health.transport !== 'ably-bridge') {
+          releaseLocalRelaySession();
+          void notifyTauriMiroConnect();
+        }
       } else {
         const diag = getLastBridgeProbeDiagnostics();
         const details = diag.length > 0 ? `\n\nDiagnostics:\n${diag.join('\n')}` : '';

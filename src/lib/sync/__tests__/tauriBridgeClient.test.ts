@@ -38,7 +38,7 @@ describe('tauriBridgeClient', () => {
       } as unknown as Response);
 
       const res = await probeTauriBridge();
-      expect(res).toEqual(mockHealth);
+      expect(res).toEqual({ ...mockHealth, transport: 'local' });
     });
 
     it('uses custom port from localStorage when configured', async () => {
@@ -65,7 +65,7 @@ describe('tauriBridgeClient', () => {
         '/api/bridge/health?port=4405',
         expect.any(Object)
       );
-      expect(res).toEqual(mockHealth);
+      expect(res).toEqual({ ...mockHealth, transport: 'local' });
       window.localStorage.removeItem('syncingboard_bridge_port');
     });
 
@@ -116,6 +116,7 @@ describe('tauriBridgeClient', () => {
         miroConnected: true,
         sessions: 1,
         wsUrl: 'ws://127.0.0.1:4401/ws',
+        transport: 'local',
       });
     });
 

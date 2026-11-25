@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { SyncedImage } from './useMiroSelection';
-import { callPenpotMcpTool, broadcastSyncActivity, exportFigmaNodeLocally } from '@/lib/sync/companionRelayClient';
-import { updateMiroImageViaTauri } from '@/lib/sync/tauriBridgeClient';
+import {
+  callPenpotMcpTool,
+  broadcastSyncActivity,
+  exportFigmaNodeLocally,
+  sendAblyBridgeCommand,
+} from '@/lib/sync/companionRelayClient';
+import { getActiveBridgeTransport, updateMiroImageViaTauri } from '@/lib/sync/tauriBridgeClient';
 import { evaluateBatchLimits } from '@/lib/sync/batchLimits';
 import { compileToMiroHtml } from '@/lib/sync/markdownCompiler';
 import type { GitHubDocPayload } from './useGitHubDocsImporter';
@@ -260,6 +265,7 @@ return;
       // Format is included in the key to prevent race conditions when copies have different formats
       const renderCache = new Map<string, string>();
       const nameCache = new Map<string, string>();
+      const ablyBridgeSyncedIds = new Set<string>();
 
       // Partition into Figma, Penpot, and GitHub Docs targets
       const githubTargets = itemsToSync.filter(t => t.platform === 'github');
@@ -283,7 +289,59 @@ return;
 
         // Fast path: when Tauri is active, export open-file Figma frames locally via node.exportAsync()
         const cloudFallbackGroups = new Map<string, string[]>();
-        if (isTauriMode && pairingId) {
+        const isAblyBridge = isTauriMode && getActiveBridgeTransport() === 'ably-bridge';
+
+        if (isAblyBridge && pairingId) {
+          // Hosted Ably Control Channel path: SyncingBridge exports from Figma locally AND
+          // PATCHes Miro directly from Rust (50 MB limit, 0 Figma REST, 0 Vercel, 0 Ably image bytes).
+          const fallbackNodeIdsByGroup = new Map<string, Set<string>>();
+          for (const item of figmaTargets) {
+            const fmt = (item.format || 'png') as 'png' | 'svg';
+            const scale = item.scale || 2;
+            const groupKey = `${item.fileKey}|${fmt}|${scale}`;
+            setSyncStatus(`Syncing "${item.nodeName}" via SyncingBridge...`);
+            try {
+              const bridgeRes = await sendAblyBridgeCommand<{
+                ok?: boolean;
+                fallbackToCloud?: boolean;
+                error?: string;
+                data?: { name?: string; itemId?: string };
+              }>(
+                pairingId,
+                {
+                  type: 'sync-image',
+                  fileKey: item.fileKey,
+                  nodeId: item.nodeId,
+                  nodeName: item.nodeName,
+                  boardId,
+                  itemId: item.id,
+                  miroToken: freshMiroToken,
+                  format: fmt,
+                  scale,
+                  width: item.width,
+                  preserveSize,
+                },
+                30_000
+              );
+              if (bridgeRes.ok) {
+                ablyBridgeSyncedIds.add(item.id);
+                if (bridgeRes.data?.name) {
+                  nameCache.set(`${item.fileKey}|${item.nodeId}`, bridgeRes.data.name);
+                }
+                continue;
+              }
+            } catch {
+              // Fall back to cloud below if bridge command fails or frame is in a closed file
+            }
+            if (!fallbackNodeIdsByGroup.has(groupKey)) {
+              fallbackNodeIdsByGroup.set(groupKey, new Set());
+            }
+            fallbackNodeIdsByGroup.get(groupKey)!.add(item.nodeId);
+          }
+          for (const [gk, idSet] of fallbackNodeIdsByGroup) {
+            cloudFallbackGroups.set(gk, [...idSet]);
+          }
+        } else if (isTauriMode && pairingId) {
           for (const [groupKey, nodeIdSet] of groups) {
             const [fileKey, format, scaleStr] = groupKey.split('|');
             const scale = Number(scaleStr);
@@ -529,72 +587,75 @@ throw new Error(communityMessage);
 
       for (let i = 0; i < imageTargets.length; i++) {
         const item = imageTargets[i];
-        // Look up by format-aware cache key (Penpot uses format in key, Figma doesn't)
-        const cacheKey = `${item.fileKey}|${item.nodeId}`;
-        const cacheFormat = item.format || 'png';
-        const cacheScale = item.scale || 2;
-        // Try format+scale aware key, then format-only fallback, then legacy key
-        let dataUrl = renderCache.get(`${cacheKey}|${cacheFormat}|${cacheScale}`);
-        if (!dataUrl) dataUrl = renderCache.get(`${cacheKey}|${cacheFormat}`);
-        if (!dataUrl) dataUrl = renderCache.get(cacheKey); // fallback to legacy key
-        if (!dataUrl) {
-          console.warn(`No render cached for ${cacheKey}, frame may be deleted or moved.`);
-          const label = item.nodeName && item.nodeName !== item.nodeId ? `"${item.nodeName}" (ID: ${item.nodeId})` : `ID: ${item.nodeId}`;
-          if (!missingNodes.includes(label)) {
-            missingNodes.push(label);
-          }
-          continue;
-        }
-
-        if (updatedCount > 0) await new Promise(resolve => setTimeout(resolve, 500));
-        // Use live name from export response if available, fall back to original
+        const alreadyPatchedByAblyBridge = ablyBridgeSyncedIds.has(item.id);
         const liveName = nameCache.get(`${item.fileKey}|${item.nodeId}`) || item.nodeName;
-        setSyncStatus(`Updating canvas widget ${i + 1}/${itemsToSync.length}: ${liveName}`);
 
-        const miroUpdatePayload = {
-          boardId,
-          itemId: item.id,
-          fileKey: item.fileKey,
-          nodeId: item.nodeId,
-          nodeName: liveName,
-          width: item.width,
-          dataUrl,
-          format: (item.format || (item.platform === 'penpot' ? 'svg' : 'png')) as 'png' | 'svg',
-          scale: item.scale || 2,
-          preserveSize,
-        };
-
-        // Fast path: when Tauri SyncingBridge is active, PATCH Miro REST API v2 directly from Rust (0 Vercel calls)
-        let response: Response | null = null;
-        if (isTauriMode) {
-          response = await updateMiroImageViaTauri(miroUpdatePayload, freshMiroToken);
-        }
-        if (!response) {
-          response = await fetch('/api/miro/update-image', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${freshMiroToken}`,
-              ...(freshFigmaToken ? { 'X-Figma-Token': freshFigmaToken } : {}),
-            },
-            body: JSON.stringify({
-              ...miroUpdatePayload,
-              platform: item.platform || 'figma',
-            }),
-          });
-        }
-
-        if (!response.ok) {
-          const errData = await response.json().catch(() => ({})) as {
-            error?: string;
-            reset?: number;
-            retryAfter?: number | null;
-          };
-          const communityMessage = applyCommunityRateLimit(response, errData);
-          if (communityMessage) {
-            throw new Error(communityMessage);
+        if (!alreadyPatchedByAblyBridge) {
+          // Look up by format-aware cache key (Penpot uses format in key, Figma doesn't)
+          const cacheKey = `${item.fileKey}|${item.nodeId}`;
+          const cacheFormat = item.format || 'png';
+          const cacheScale = item.scale || 2;
+          // Try format+scale aware key, then format-only fallback, then legacy key
+          let dataUrl = renderCache.get(`${cacheKey}|${cacheFormat}|${cacheScale}`);
+          if (!dataUrl) dataUrl = renderCache.get(`${cacheKey}|${cacheFormat}`);
+          if (!dataUrl) dataUrl = renderCache.get(cacheKey); // fallback to legacy key
+          if (!dataUrl) {
+            console.warn(`No render cached for ${cacheKey}, frame may be deleted or moved.`);
+            const label = item.nodeName && item.nodeName !== item.nodeId ? `"${item.nodeName}" (ID: ${item.nodeId})` : `ID: ${item.nodeId}`;
+            if (!missingNodes.includes(label)) {
+              missingNodes.push(label);
+            }
+            continue;
           }
-          throw new Error(errData.error || 'Failed to update image on Miro board');
+
+          if (updatedCount > 0) await new Promise(resolve => setTimeout(resolve, 500));
+          setSyncStatus(`Updating canvas widget ${i + 1}/${itemsToSync.length}: ${liveName}`);
+
+          const miroUpdatePayload = {
+            boardId,
+            itemId: item.id,
+            fileKey: item.fileKey,
+            nodeId: item.nodeId,
+            nodeName: liveName,
+            width: item.width,
+            dataUrl,
+            format: (item.format || (item.platform === 'penpot' ? 'svg' : 'png')) as 'png' | 'svg',
+            scale: item.scale || 2,
+            preserveSize,
+          };
+
+          // Fast path: when Tauri SyncingBridge is active, PATCH Miro REST API v2 directly from Rust (0 Vercel calls)
+          let response: Response | null = null;
+          if (isTauriMode) {
+            response = await updateMiroImageViaTauri(miroUpdatePayload, freshMiroToken);
+          }
+          if (!response) {
+            response = await fetch('/api/miro/update-image', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${freshMiroToken}`,
+                ...(freshFigmaToken ? { 'X-Figma-Token': freshFigmaToken } : {}),
+              },
+              body: JSON.stringify({
+                ...miroUpdatePayload,
+                platform: item.platform || 'figma',
+              }),
+            });
+          }
+
+          if (!response.ok) {
+            const errData = await response.json().catch(() => ({})) as {
+              error?: string;
+              reset?: number;
+              retryAfter?: number | null;
+            };
+            const communityMessage = applyCommunityRateLimit(response, errData);
+            if (communityMessage) {
+              throw new Error(communityMessage);
+            }
+            throw new Error(errData.error || 'Failed to update image on Miro board');
+          }
         }
 
         // Update widget metadata and title via the Miro SDK.

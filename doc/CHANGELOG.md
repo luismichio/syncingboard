@@ -11,6 +11,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [0.18.1] - 2026-11-25
+
+### Added
+- **SyncingBridge Hybrid Cloud Control Channel (`ably-bridge`)** — added an idle-zero outbound Ably control channel in `tauri-bridge/src/ablyBridge.ts` (with a **Cloud Control Channel** toggle in SyncingBridge Settings) and Tier 3 fallback in `src/lib/sync/tauriBridgeClient.ts`, allowing hosted `syncingboard.com` inside Miro Desktop, Chrome, and Safari (where Chromium LNA blocks direct loopback) to link with SyncingBridge while keeping 100% of Figma `exportAsync()` and 50 MB direct Rust Miro image `PATCH` uploads local (0 Figma REST calls, 0 Vercel calls, 0 Ably image bytes). Self-hosted local `yarn local:tauri` setups automatically stay on Tier 1 with 0 Ably connections.
+- **SyncingBridge Rust Local IPC Commands (`tauri-bridge/src-tauri/src/lib.rs`)** — added `bridge_request_local`, `bridge_patch_miro_image`, `bridge_log_cloud`, and `bridge_set_cloud_miro`, plus `bridge_pairing_active`, `bridge_local_target`, and `bridge_source_event` lifecycle events.
+
+### Fixed
+- **Miro `localhost` Probe & Diagnostics** — updated `probeTauriBridge()` to probe `localhost` before `127.0.0.1` and surface per-probe diagnostics on connection failure.
+
 ## [0.18.0] - 2026-11-25
 
 ### Added
