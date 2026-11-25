@@ -14,7 +14,13 @@ import { ImportTab } from './components/ImportTab';
 import { SettingsTab } from './components/SettingsTab';
 import { VersionStamp } from '@/components/VersionStamp';
 import { GroupedSyncedImage, ImportPlatform, MiroPluginTab } from './types';
-import { getLastBridgeProbeDiagnostics, notifyTauriMiroConnect, probeTauriBridge } from '@/lib/sync/tauriBridgeClient';
+import {
+  BridgeTransport,
+  getActiveBridgeTransport,
+  getLastBridgeProbeDiagnostics,
+  notifyTauriMiroConnect,
+  probeTauriBridge,
+} from '@/lib/sync/tauriBridgeClient';
 
 const MAX_SCALE = PLAN === 'community' ? 2 : 4;
 const AVAILABLE_SCALES = Array.from({ length: MAX_SCALE }, (_, i) => i + 1);
@@ -103,6 +109,7 @@ export default function MiroPluginPage() {
   const [importScale, setImportScale] = useState<number>(1);
   const [defaultPngScale, setDefaultPngScale] = useState<number>(1);
   const [useTauri, setUseTauri] = useState<boolean>(false);
+  const [bridgeTransport, setBridgeTransport] = useState<BridgeTransport | null>(null);
   const [pairingId, setPairingId] = useState<string>('');
   const [copiedPairing, setCopiedPairing] = useState<boolean>(false);
   const [relayUserIdHash, setRelayUserIdHash] = useState<string | null>(null);
@@ -137,9 +144,11 @@ export default function MiroPluginPage() {
       const activePairing = pairingId || getOrCreatePairingId();
       const health = await probeTauriBridge(3000, activePairing || undefined);
       if (health && health.status === 'ok') {
+        const nextTransport = health.transport ?? getActiveBridgeTransport() ?? 'local';
+        setBridgeTransport(nextTransport);
         if (!useTauri) {
           setUseTauri(true);
-          if (health.transport !== 'ably-bridge') {
+          if (nextTransport !== 'ably-bridge') {
             releaseLocalRelaySession();
             void notifyTauriMiroConnect();
           }
@@ -147,6 +156,7 @@ export default function MiroPluginPage() {
         setFigmaConnected(health.figmaConnected === true);
       } else {
         setUseTauri(false);
+        setBridgeTransport(null);
         setFigmaConnected(false);
       }
     };
@@ -163,7 +173,7 @@ export default function MiroPluginPage() {
   }, [applyLiveFigmaSelection]);
 
   useEffect(() => {
-    if (!useTauri || !pairingId) return;
+    if (!useTauri || !pairingId || !bridgeTransport) return;
     let cancelled = false;
     let unsubscribe: (() => void) | null = null;
 
@@ -187,7 +197,7 @@ export default function MiroPluginPage() {
       cancelled = true;
       if (unsubscribe) unsubscribe();
     };
-  }, [useTauri, pairingId]);
+  }, [useTauri, pairingId, bridgeTransport]);
 
   // Global Tauri Hotkey listener (Ctrl/Cmd+Shift+I import, R replace, S sync)
   const hotkeyHandlersRef = useRef({
@@ -230,7 +240,7 @@ export default function MiroPluginPage() {
   ]);
 
   useEffect(() => {
-    if (!useTauri || !pairingId) return;
+    if (!useTauri || !pairingId || !bridgeTransport) return;
     let cancelled = false;
     let unsubscribe: (() => void) | null = null;
 
@@ -256,20 +266,23 @@ export default function MiroPluginPage() {
       cancelled = true;
       if (unsubscribe) unsubscribe();
     };
-  }, [useTauri, pairingId]);
+  }, [useTauri, pairingId, bridgeTransport]);
 
   const handleToggleTauri = async () => {
     if (useTauri) {
       setUseTauri(false);
+      setBridgeTransport(null);
       setFigmaConnected(false);
       localStorage.setItem('syncingboard_use_tauri', 'false');
     } else {
       const health = await probeTauriBridge(2000, pairingId || undefined);
       if (health && health.status === 'ok') {
+        const nextTransport = health.transport ?? getActiveBridgeTransport() ?? 'local';
+        setBridgeTransport(nextTransport);
         setUseTauri(true);
         setFigmaConnected(health.figmaConnected === true);
         localStorage.setItem('syncingboard_use_tauri', 'true');
-        if (health.transport !== 'ably-bridge') {
+        if (nextTransport !== 'ably-bridge') {
           releaseLocalRelaySession();
           void notifyTauriMiroConnect();
         }
