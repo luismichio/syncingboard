@@ -448,9 +448,18 @@ export function initPenpotDocs(): void {
     selectedCard.style.display = 'flex';
     selectedTitleEl.textContent = sel.gitMeta.sectionHeading || sel.name || 'Bound Doc';
     const fullUrl = buildBoundGitHubUrl(sel.gitMeta);
+    let safeHref = '#';
+    try {
+      const parsed = new URL(fullUrl);
+      if (parsed.protocol === 'https:' && parsed.hostname === 'github.com') {
+        safeHref = `https://github.com${parsed.pathname}${parsed.hash}`;
+      }
+    } catch {
+      safeHref = '#';
+    }
     selectedUrlEl.textContent = sel.gitMeta.githubUrl.replace(/^https:\/\/github\.com\//, '');
-    selectedUrlEl.href = fullUrl;
-    if (selectedOpenBtn) selectedOpenBtn.href = fullUrl;
+    selectedUrlEl.href = safeHref;
+    if (selectedOpenBtn) selectedOpenBtn.href = safeHref;
 
     const cached = sectionsCache.get(sel.gitMeta.githubUrl);
     if (cached) {

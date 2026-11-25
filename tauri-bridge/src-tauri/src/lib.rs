@@ -935,10 +935,37 @@ async fn handle_miro_update_image(
     };
 
     let byte_len = image_bytes.len();
-    let image_url = format!(
-        "https://api.miro.com/v2/boards/{}/images/{}",
-        body.board_id, body.item_id
-    );
+    // Strict allowlist validation on Miro board_id and item_id to prevent SSRF / path traversal
+    let is_valid_miro_id = |id: &str| -> bool {
+        !id.is_empty()
+            && id.len() <= 128
+            && id
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'=' | b'+'))
+    };
+    if !is_valid_miro_id(&body.board_id) || !is_valid_miro_id(&body.item_id) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "Invalid Miro board_id or item_id format" })),
+        );
+    }
+
+    let mut parsed_url = match reqwest::Url::parse("https://api.miro.com/v2/boards/") {
+        Ok(u) => u,
+        Err(_) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": "Failed to construct Miro API URL" })),
+            );
+        }
+    };
+    if let Ok(mut segments) = parsed_url.path_segments_mut() {
+        segments.pop_if_empty();
+        segments.push(&body.board_id);
+        segments.push("images");
+        segments.push(&body.item_id);
+    }
+    let image_url = parsed_url.to_string();
     let auth_value = format!("Bearer {}", miro_token);
     let client = reqwest::Client::new();
 

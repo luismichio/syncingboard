@@ -104,7 +104,11 @@
 
   function setStatus(label, tone) {
     statusEl.className = 'status-pill' + (tone ? ' ' + tone : '');
-    statusEl.innerHTML = '<span class="dot"></span>' + label;
+    statusEl.textContent = '';
+    var dot = document.createElement('span');
+    dot.className = 'dot';
+    statusEl.appendChild(dot);
+    statusEl.appendChild(document.createTextNode(String(label || '')));
   }
 
   // Read a pairing id shared with the Figma companion; create one otherwise.
