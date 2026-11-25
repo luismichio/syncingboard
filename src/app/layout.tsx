@@ -18,6 +18,7 @@ export async function generateMetadata(): Promise<Metadata> {
       "SyncingBoard is a stateless, self-hosted integration that syncs Figma and Penpot frame screenshots into Miro or FigJam in-place with zero duplicates.",
     icons: {
       icon: "/syncingboard_logo.svg",
+      shortcut: "/syncingboard_logo.svg",
     },
     metadataBase: new URL(SITE_URL),
     alternates: {
