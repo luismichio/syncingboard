@@ -107,9 +107,10 @@ export async function generateAblyToken(
   if (isMiro && !sessionId) {
     throw new Error('Miro relay token requires a session ID.');
   }
+  const miroCaps = platform === 'figma' ? ['publish', 'subscribe'] : ['subscribe'];
   const tokenParams: TokenParams = {
     capability: JSON.stringify({
-      [`${prefix}:${pairingId}`]: isMiro ? ['subscribe'] : ['publish', 'subscribe', 'presence'],
+      [`${prefix}:${pairingId}`]: isMiro ? miroCaps : ['publish', 'subscribe', 'presence'],
     }),
     ttl: 2 * 60 * 60 * 1000, // 2 hours
     clientId: isMiro ? `miro:${sessionId}` : `companion:${pairingId}`,

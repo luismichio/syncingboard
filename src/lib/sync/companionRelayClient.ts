@@ -8,6 +8,7 @@ import {
   invalidateAllAblyTokens,
   setCachedAblyToken,
 } from '@/lib/ablyTokenCache';
+import { getActiveBridgeTransport } from '@/lib/sync/tauriBridgeClient';
 
 export interface PenpotMcpResponse {
   content: { type: string; text?: string; data?: string; mimeType?: string; name?: string; width?: number; height?: number }[];
@@ -374,7 +375,8 @@ export async function subscribeRelayLive(
   const isTauriMode = typeof window !== 'undefined' && localStorage.getItem('syncingboard_use_tauri') === 'true';
 
   // Penpot runs in the browser sandbox (Chrome LNA blocks loopback), so only Figma routes via local Tauri.
-  if (isTauriMode && platform !== 'penpot') {
+  // When SyncingBridge is linked via the Ably Control Channel ('ably-bridge'), fall through to Ably below.
+  if (isTauriMode && platform !== 'penpot' && getActiveBridgeTransport() !== 'ably-bridge') {
     let ws: WebSocket | null = null;
     let sse: EventSource | null = null;
     let active = true;
@@ -692,20 +694,33 @@ export async function callRelay(body: RelayRequestBody): Promise<RelayJson> {
 
   // Hybrid dual-transport: Figma routes via local Tauri SyncingBridge when enabled,
   // while Penpot always uses Ably Cloud Relay (avoiding Chrome LNA blocks & cross-talk).
-  if (isTauriMode && body.platform !== 'penpot' && typeof WebSocket !== 'undefined') {
-    try {
-      return await callLocalTauriRelay(body);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      const isBridgeConnectionFailure =
-        msg.includes('Local Bridge WebSocket connection failed') ||
-        msg.includes('Failed to connect to local SyncingBridge') ||
-        msg.includes('SyncingBridge is unreachable');
-      if (!isBridgeConnectionFailure) {
-        throw err;
+  if (isTauriMode && body.platform !== 'penpot') {
+    if (getActiveBridgeTransport() === 'ably-bridge' && body.action === 'select') {
+      const resp = await sendAblyBridgeCommand<{ ok?: boolean; data?: RelayJson; error?: string }>(
+        body.pairingId,
+        { type: 'select' },
+        body.timeoutMs ?? 10_000
+      );
+      if (!resp.ok) {
+        throw new Error(resp.error || 'SyncingBridge select failed');
       }
-      // Transient fallback to Ably Cloud Relay for this call without clearing
-      // the user's syncingboard_use_tauri preference (so Tauri auto-resumes on restart).
+      return (resp.data ?? {}) as RelayJson;
+    }
+    if (typeof WebSocket !== 'undefined') {
+      try {
+        return await callLocalTauriRelay(body);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        const isBridgeConnectionFailure =
+          msg.includes('Local Bridge WebSocket connection failed') ||
+          msg.includes('Failed to connect to local SyncingBridge') ||
+          msg.includes('SyncingBridge is unreachable');
+        if (!isBridgeConnectionFailure) {
+          throw err;
+        }
+        // Transient fallback to Ably Cloud Relay for this call without clearing
+        // the user's syncingboard_use_tauri preference (so Tauri auto-resumes on restart).
+      }
     }
   }
 
@@ -898,6 +913,51 @@ export async function callPenpotMcpTool(
  * Broadcasts sync progress and status notifications to the local SyncingBridge
  * and companion plugins for real-time visibility.
  */
+export async function sendAblyBridgeCommand<T extends Record<string, unknown>>(
+  pairingId: string,
+  command: Record<string, unknown>,
+  timeoutMs = 15_000
+): Promise<T> {
+  const channel = await getAblyConnection(pairingId, 'figma');
+  const requestId = `br_${Math.random().toString(36).slice(2, 10)}_${Date.now().toString(36)}`;
+  activeRelayCalls++;
+  try {
+    return await new Promise<T>((resolve, reject) => {
+      let settled = false;
+      const onResp = (msg: Ably.Message) => {
+        if (settled || !msg.data || typeof msg.data !== 'object') return;
+        const payload = msg.data as Record<string, unknown>;
+        if (payload.requestId !== requestId) return;
+        settled = true;
+        clearTimeout(timer);
+        channel.unsubscribe('bridge-resp', onResp);
+        resolve(payload as T);
+      };
+
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        channel.unsubscribe('bridge-resp', onResp);
+        reject(new Error(`SyncingBridge Ably command timed out (${timeoutMs}ms)`));
+      }, timeoutMs);
+
+      void channel
+        .subscribe('bridge-resp', onResp)
+        .then(() => channel.publish('bridge-cmd', { requestId, ...command }))
+        .catch((err: unknown) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          channel.unsubscribe('bridge-resp', onResp);
+          reject(err instanceof Error ? err : new Error(String(err)));
+        });
+    });
+  } finally {
+    activeRelayCalls = Math.max(0, activeRelayCalls - 1);
+    scheduleIdleClose();
+  }
+}
+
 export async function broadcastSyncActivity(pairingId: string, message: string): Promise<void> {
   const isTauriMode = typeof window !== 'undefined' && localStorage.getItem('syncingboard_use_tauri') === 'true';
   if (!pairingId || !isTauriMode) return;

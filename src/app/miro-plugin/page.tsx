@@ -261,18 +261,20 @@ export default function MiroPluginPage() {
       setFigmaConnected(false);
       localStorage.setItem('syncingboard_use_tauri', 'false');
     } else {
-      const health = await probeTauriBridge(2000);
+      const health = await probeTauriBridge(2000, pairingId || undefined);
       if (health && health.status === 'ok') {
         setUseTauri(true);
         setFigmaConnected(health.figmaConnected === true);
         localStorage.setItem('syncingboard_use_tauri', 'true');
-        releaseLocalRelaySession();
-        void notifyTauriMiroConnect();
+        if (health.transport !== 'ably-bridge') {
+          releaseLocalRelaySession();
+          void notifyTauriMiroConnect();
+        }
       } else {
         const diag = getLastBridgeProbeDiagnostics();
         const details = diag.length > 0 ? `\n\nDiagnostics:\n${diag.join('\n')}` : '';
         alert(
-          `Could not reach SyncingBridge on localhost:4401 or 127.0.0.1:4401. Make sure SyncingBridge is running (or your Miro client is not blocking local network access).${details}`
+          `Could not reach SyncingBridge locally or over Ably. Make sure SyncingBridge is running and Figma Companion is connected with the same Pairing ID.${details}`
         );
       }
     }

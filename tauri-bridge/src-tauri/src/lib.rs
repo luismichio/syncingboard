@@ -80,6 +80,12 @@ impl AppState {
         }
     }
 
+    async fn emit_event(&self, event_name: &str, payload: serde_json::Value) {
+        if let Some(handle) = self.app_handle.lock().await.as_ref() {
+            let _ = handle.emit(event_name, payload);
+        }
+    }
+
     async fn log(&self, service: &str, message: impl Into<String>) {
         let msg: String = message.into();
         let sessions = *self.active_connections.lock().await;
@@ -140,6 +146,20 @@ impl AppState {
             // conn_id = 0 denotes server-originated broadcast (delivered to all subscribers)
             let _ = sender.send((0, payload.clone()));
         }
+
+        // Also notify the SyncingBridge WebView so Ably Cloud Control mode can forward hotkeys
+        self.emit_event(
+            "bridge_source_event",
+            serde_json::json!({
+                "event": "hotkey",
+                "payload": {
+                    "action": action,
+                    "shortcut": shortcut_label,
+                    "ts": Date_now_secs(),
+                }
+            }),
+        )
+        .await;
 
         self.log(
             "Hotkey",
@@ -275,7 +295,11 @@ pub fn run() {
             set_broker_enabled,
             set_broker_port,
             get_hotkeys,
-            set_hotkeys
+            set_hotkeys,
+            bridge_request_local,
+            bridge_patch_miro_image,
+            bridge_log_cloud,
+            bridge_set_cloud_miro
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -612,11 +636,24 @@ async fn handle_ws_socket(socket: WebSocket, state: AppState) {
                                                 *t += 1;
                                                 drop(t);
                                                 state.set_service_connection("miro", true).await;
+                                                state.emit_event(
+                                                    "bridge_local_target",
+                                                    serde_json::json!({ "active": true }),
+                                                ).await;
                                             } else {
                                                 let mut s = state.sources_count.lock().await;
                                                 *s += 1;
+                                                let sources_now = *s;
                                                 drop(s);
                                                 state.set_service_connection("figma", true).await;
+                                                state.emit_event(
+                                                    "bridge_pairing_active",
+                                                    serde_json::json!({
+                                                        "pairingId": pid,
+                                                        "active": true,
+                                                        "sources": sources_now,
+                                                    }),
+                                                ).await;
                                                 state.log(
                                                     platform_label,
                                                     format!("Connected \u{2014} {} Companion plugin is now linked to SyncingBridge (channel {})", platform_label, pid),
@@ -656,6 +693,14 @@ async fn handle_ws_socket(socket: WebSocket, state: AppState) {
                                             state.log("Transport", format!("[Channel: {}] Companion -> Miro: Result delivered ({} bytes)", pid, text.len())).await;
                                         } else if event_name == "selection" {
                                             state.log("Transport", format!("[Channel: {}] Companion -> Miro: Live selection stream ({} bytes)", pid, text.len())).await;
+                                            state.emit_event(
+                                                "bridge_source_event",
+                                                serde_json::json!({
+                                                    "pairingId": pid,
+                                                    "event": "selection",
+                                                    "payload": parsed.payload,
+                                                }),
+                                            ).await;
                                         } else {
                                             state.log("Transport", format!("[Channel: {}] Relayed '{}' ({} bytes)", pid, event_name, text.len())).await;
                                         }
@@ -672,7 +717,7 @@ async fn handle_ws_socket(socket: WebSocket, state: AppState) {
                                     let resp = serde_json::json!({
                                         "action": "health-result",
                                         "status": "ok",
-                                        "version": "0.17.2",
+                                        "version": env!("CARGO_PKG_VERSION"),
                                         "figmaConnected": figma_connected,
                                         "miroConnected": miro_connected,
                                         "sessions": sessions,
@@ -752,6 +797,10 @@ async fn handle_ws_socket(socket: WebSocket, state: AppState) {
                 drop(t);
                 if remaining == 0 {
                     state.set_service_connection("miro", false).await;
+                    state.emit_event(
+                        "bridge_local_target",
+                        serde_json::json!({ "active": false }),
+                    ).await;
                 }
             } else {
                 let mut s = state.sources_count.lock().await;
@@ -760,6 +809,14 @@ async fn handle_ws_socket(socket: WebSocket, state: AppState) {
                 drop(s);
                 if remaining == 0 {
                     state.set_service_connection("figma", false).await;
+                    state.emit_event(
+                        "bridge_pairing_active",
+                        serde_json::json!({
+                            "pairingId": current_pairing_id,
+                            "active": false,
+                            "sources": 0,
+                        }),
+                    ).await;
                 }
             }
         }
@@ -831,6 +888,9 @@ async fn handle_health(State(state): State<AppState>) -> impl IntoResponse {
 /// Called once by the Miro plugin when the user connects to the bridge.
 async fn handle_miro_connect(State(state): State<AppState>) -> impl IntoResponse {
     state.set_service_connection("miro", true).await;
+    state
+        .emit_event("bridge_local_target", serde_json::json!({ "active": true }))
+        .await;
     state.log("Miro", "Connected \u{2014} SyncingBoard plugin is now linked to SyncingBridge").await;
     (StatusCode::OK, Json(serde_json::json!({ "status": "connected" })))
 }
@@ -889,53 +949,35 @@ fn decode_image_data_url(data_url: &str, format: &str) -> Result<(Vec<u8>, &'sta
     }
 }
 
-/// Local Miro REST API v2 image PATCH proxy (0 Vercel calls, 50 MB body limit).
-async fn handle_miro_update_image(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Json(body): Json<MiroUpdateImageRequest>,
-) -> impl IntoResponse {
+/// Shared direct Miro REST API v2 multipart PATCH implementation (50 MB limit, 0 Vercel calls).
+async fn perform_miro_image_patch(
+    state: &AppState,
+    miro_token: &str,
+    body: &MiroUpdateImageRequest,
+) -> Result<serde_json::Value, (StatusCode, String)> {
     if !*state.broker_enabled.lock().await {
-        return (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(serde_json::json!({ "error": "Local broker is paused" })),
-        );
+        return Err((StatusCode::SERVICE_UNAVAILABLE, "Local broker is paused".to_string()));
     }
 
-    let miro_token = headers
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer ").or_else(|| v.strip_prefix("bearer ")))
-        .unwrap_or("")
-        .trim()
-        .to_string();
-
-    if miro_token.is_empty() {
-        return (
+    let token = miro_token.trim();
+    if token.is_empty() {
+        return Err((
             StatusCode::UNAUTHORIZED,
-            Json(serde_json::json!({ "error": "Missing Miro Authorization Bearer token" })),
-        );
+            "Missing Miro Authorization Bearer token".to_string(),
+        ));
     }
 
     if !is_valid_miro_board_id(&body.board_id) || !is_valid_miro_item_id(&body.item_id) {
-        return (
+        return Err((
             StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({ "error": "Invalid boardId or itemId format" })),
-        );
+            "Invalid boardId or itemId format".to_string(),
+        ));
     }
 
-    let (image_bytes, filename, mime_type) = match decode_image_data_url(&body.data_url, &body.format) {
-        Ok(decoded) => decoded,
-        Err(msg) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({ "error": msg })),
-            );
-        }
-    };
+    let (image_bytes, filename, mime_type) = decode_image_data_url(&body.data_url, &body.format)
+        .map_err(|msg| (StatusCode::BAD_REQUEST, msg))?;
 
     let byte_len = image_bytes.len();
-    // Strict allowlist validation on Miro board_id and item_id to prevent SSRF / path traversal
     let is_valid_miro_id = |id: &str| -> bool {
         !id.is_empty()
             && id.len() <= 128
@@ -944,21 +986,14 @@ async fn handle_miro_update_image(
                 .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'=' | b'+'))
     };
     if !is_valid_miro_id(&body.board_id) || !is_valid_miro_id(&body.item_id) {
-        return (
+        return Err((
             StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({ "error": "Invalid Miro board_id or item_id format" })),
-        );
+            "Invalid Miro board_id or item_id format".to_string(),
+        ));
     }
 
-    let mut parsed_url = match reqwest::Url::parse("https://api.miro.com/v2/boards/") {
-        Ok(u) => u,
-        Err(_) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({ "error": "Failed to construct Miro API URL" })),
-            );
-        }
-    };
+    let mut parsed_url = reqwest::Url::parse("https://api.miro.com/v2/boards/")
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Failed to construct Miro API URL".to_string()))?;
     if let Ok(mut segments) = parsed_url.path_segments_mut() {
         segments.pop_if_empty();
         segments.push(&body.board_id);
@@ -966,7 +1001,7 @@ async fn handle_miro_update_image(
         segments.push(&body.item_id);
     }
     let image_url = parsed_url.to_string();
-    let auth_value = format!("Bearer {}", miro_token);
+    let auth_value = format!("Bearer {}", token);
     let client = reqwest::Client::new();
 
     // Step 1 (preserveSize): snapshot current geometry width before upload
@@ -992,18 +1027,10 @@ async fn handle_miro_update_image(
     }
 
     // Step 2: multipart PATCH image binary directly to Miro REST API v2
-    let part = match reqwest::multipart::Part::bytes(image_bytes)
+    let part = reqwest::multipart::Part::bytes(image_bytes)
         .file_name(filename.to_string())
         .mime_str(mime_type)
-    {
-        Ok(p) => p,
-        Err(e) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({ "error": format!("Failed to build multipart payload: {}", e) })),
-            );
-        }
-    };
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to build multipart payload: {}", e)))?;
 
     let mut form = reqwest::multipart::Form::new().part("resource", part);
     if !body.preserve_size {
@@ -1015,22 +1042,14 @@ async fn handle_miro_update_image(
         }
     }
 
-    let upload_res = match client
+    let upload_res = client
         .patch(&image_url)
         .header("Authorization", &auth_value)
         .header("Accept", "application/json")
         .multipart(form)
         .send()
         .await
-    {
-        Ok(r) => r,
-        Err(e) => {
-            return (
-                StatusCode::BAD_GATEWAY,
-                Json(serde_json::json!({ "error": format!("Miro API request failed: {}", e) })),
-            );
-        }
-    };
+        .map_err(|e| (StatusCode::BAD_GATEWAY, format!("Miro API request failed: {}", e)))?;
 
     let upload_status = upload_res.status();
     if !upload_status.is_success() {
@@ -1041,9 +1060,10 @@ async fn handle_miro_update_image(
         let msg = err_json
             .get("message")
             .and_then(|m| m.as_str())
-            .unwrap_or("Miro image update failed");
+            .unwrap_or("Miro image update failed")
+            .to_string();
         let code = StatusCode::from_u16(upload_status.as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
-        return (code, Json(serde_json::json!({ "error": msg })));
+        return Err((code, msg));
     }
 
     let updated_data = upload_res
@@ -1122,14 +1142,137 @@ async fn handle_miro_update_image(
         )
         .await;
 
-    (
-        StatusCode::OK,
-        Json(serde_json::json!({
-            "success": true,
-            "data": updated_data,
-            "local": true
-        })),
-    )
+    Ok(serde_json::json!({
+        "success": true,
+        "data": updated_data,
+        "local": true
+    }))
+}
+
+/// Local Miro REST API v2 image PATCH proxy (0 Vercel calls, 50 MB body limit).
+async fn handle_miro_update_image(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<MiroUpdateImageRequest>,
+) -> impl IntoResponse {
+    let miro_token = headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer ").or_else(|| v.strip_prefix("bearer ")))
+        .unwrap_or("")
+        .trim()
+        .to_string();
+
+    match perform_miro_image_patch(&state, &miro_token, &body).await {
+        Ok(json) => (StatusCode::OK, Json(json)),
+        Err((code, msg)) => (code, Json(serde_json::json!({ "error": msg }))),
+    }
+}
+
+/// Tauri IPC command: send a local command to Figma Companion on ws://127.0.0.1 and await its result.
+#[tauri::command]
+async fn bridge_request_local(
+    state: tauri::State<'_, AppState>,
+    pairing_id: String,
+    payload: serde_json::Value,
+    timeout_ms: Option<u64>,
+) -> Result<serde_json::Value, String> {
+    if !*state.broker_enabled.lock().await {
+        return Err("Local broker is paused".to_string());
+    }
+    let req_id = payload
+        .get("id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let bcast_sender = state.get_or_create_channel(&pairing_id).await;
+    let mut rx = bcast_sender.subscribe();
+    let msg = serde_json::json!({
+        "action": "broadcast",
+        "pairing_id": pairing_id,
+        "event": "command",
+        "payload": payload,
+    })
+    .to_string();
+
+    // conn_id = 0 denotes server-originated broadcast
+    let _ = bcast_sender.send((0, msg));
+
+    let wait_ms = timeout_ms.unwrap_or(15_000).clamp(1_000, 30_000);
+    let result = tokio::time::timeout(std::time::Duration::from_millis(wait_ms), async {
+        loop {
+            match rx.recv().await {
+                Ok((_, text)) => {
+                    if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&text) {
+                        let ev = parsed.get("event").and_then(|v| v.as_str()).unwrap_or("");
+                        let act = parsed.get("action").and_then(|v| v.as_str()).unwrap_or("");
+                        if (ev == "result" || act == "result") && parsed.get("payload").is_some() {
+                            let res_payload = &parsed["payload"];
+                            let resp_id = res_payload
+                                .get("id")
+                                .or_else(|| res_payload.get("requestId"))
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("");
+                            if req_id.is_empty() || resp_id.is_empty() || resp_id == req_id {
+                                return Ok(res_payload.clone());
+                            }
+                        }
+                    }
+                }
+                Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(_) => return Err("Local channel closed".to_string()),
+            }
+        }
+    })
+    .await;
+
+    match result {
+        Ok(inner) => inner,
+        Err(_) => Err("Local Figma Companion request timed out".to_string()),
+    }
+}
+
+/// Tauri IPC command: directly PATCH a Miro image from Rust (50 MB limit, 0 Vercel / 0 Ably binary bytes).
+#[tauri::command]
+async fn bridge_patch_miro_image(
+    state: tauri::State<'_, AppState>,
+    miro_token: String,
+    request: MiroUpdateImageRequest,
+) -> Result<serde_json::Value, String> {
+    perform_miro_image_patch(&state, &miro_token, &request)
+        .await
+        .map_err(|(_, msg)| msg)
+}
+
+#[tauri::command]
+async fn bridge_log_cloud(
+    state: tauri::State<'_, AppState>,
+    service: String,
+    message: String,
+) -> Result<(), String> {
+    state.log(&service, message).await;
+    Ok(())
+}
+
+#[tauri::command]
+async fn bridge_set_cloud_miro(
+    state: tauri::State<'_, AppState>,
+    connected: bool,
+) -> Result<(), String> {
+    state.set_service_connection("miro", connected).await;
+    let mut t = state.targets_count.lock().await;
+    if connected && *t == 0 {
+        *t = 1;
+    } else if !connected && *t > 0 {
+        *t = 0;
+    }
+    drop(t);
+    let sessions = *state.active_connections.lock().await;
+    let enabled = *state.broker_enabled.lock().await;
+    state
+        .emit_status(if enabled { "active" } else { "paused" }, sessions, None)
+        .await;
+    Ok(())
 }
 
 #[tauri::command]

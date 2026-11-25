@@ -6,6 +6,8 @@
 
 import { DEFAULT_BRIDGE_PORT, parseBridgePort } from './bridgeValidation';
 
+export type BridgeTransport = 'local' | 'ably-bridge';
+
 export interface TauriBridgeHealth {
   status: string;
   version: string;
@@ -13,10 +15,45 @@ export interface TauriBridgeHealth {
   miroConnected: boolean;
   sessions: number;
   wsUrl: string;
+  transport?: BridgeTransport;
 }
 
 let resolvedBridgeHost: 'localhost' | '127.0.0.1' = '127.0.0.1';
+let activeBridgeTransport: BridgeTransport | null = null;
 let lastProbeDiagnostics: string[] = [];
+
+const STORAGE_BRIDGE_TRANSPORT = 'syncingboard_bridge_transport';
+
+export function getActiveBridgeTransport(): BridgeTransport | null {
+  if (activeBridgeTransport) return activeBridgeTransport;
+  if (typeof window !== 'undefined') {
+    try {
+      const saved = window.sessionStorage?.getItem(STORAGE_BRIDGE_TRANSPORT);
+      if (saved === 'local' || saved === 'ably-bridge') {
+        activeBridgeTransport = saved;
+        return saved;
+      }
+    } catch {
+      // ignore
+    }
+  }
+  return null;
+}
+
+export function setActiveBridgeTransport(transport: BridgeTransport | null): void {
+  activeBridgeTransport = transport;
+  if (typeof window !== 'undefined') {
+    try {
+      if (transport) {
+        window.sessionStorage?.setItem(STORAGE_BRIDGE_TRANSPORT, transport);
+      } else {
+        window.sessionStorage?.removeItem(STORAGE_BRIDGE_TRANSPORT);
+      }
+    } catch {
+      // ignore
+    }
+  }
+}
 
 export function getLastBridgeProbeDiagnostics(): string[] {
   return [...lastProbeDiagnostics];
@@ -113,13 +150,16 @@ export async function updateMiroImageViaTauri(
  * 2. Falls back to direct WebSocket ws://127.0.0.1:<port>/ws
  * 3. Falls back to direct HTTP http://127.0.0.1:<port>/health
  */
-export async function probeTauriBridge(timeoutMs = 2000): Promise<TauriBridgeHealth | null> {
+export async function probeTauriBridge(
+  timeoutMs = 2000,
+  pairingId?: string
+): Promise<TauriBridgeHealth | null> {
   if (typeof window === 'undefined') return null;
   const port = getConfiguredBridgePort();
   const diagnostics: string[] = [];
   lastProbeDiagnostics = diagnostics;
 
-  // 1. Primary: relative Next.js backend proxy (/api/bridge/health)
+  // 1. Primary: relative Next.js backend proxy (/api/bridge/health) — 0 Ably for self-hosted local
   try {
     const healthPath = port === '4401' ? '/api/bridge/health' : `/api/bridge/health?port=${encodeURIComponent(port)}`;
     const res = await fetch(healthPath, {
@@ -130,7 +170,8 @@ export async function probeTauriBridge(timeoutMs = 2000): Promise<TauriBridgeHea
     if (res.ok) {
       const data = (await res.json()) as TauriBridgeHealth;
       if (data && data.status === 'ok') {
-        return data;
+        setActiveBridgeTransport('local');
+        return { ...data, transport: 'local' };
       }
       diagnostics.push(`${healthPath}: invalid payload`);
     } else {
@@ -189,6 +230,7 @@ export async function probeTauriBridge(timeoutMs = 2000): Promise<TauriBridgeHea
                 clearTimeout(timer);
                 cleanup();
                 resolvedBridgeHost = host;
+                setActiveBridgeTransport('local');
                 resolve({
                   status: data.status || 'ok',
                   version: data.version || '0.18.0',
@@ -196,6 +238,7 @@ export async function probeTauriBridge(timeoutMs = 2000): Promise<TauriBridgeHea
                   miroConnected: Boolean(data.miroConnected),
                   sessions: data.sessions || 0,
                   wsUrl: data.wsUrl || wsEndpoint,
+                  transport: 'local',
                 });
               }
             } catch {
@@ -237,7 +280,9 @@ export async function probeTauriBridge(timeoutMs = 2000): Promise<TauriBridgeHea
       });
       if (res.ok) {
         resolvedBridgeHost = host;
-        return (await res.json()) as TauriBridgeHealth;
+        setActiveBridgeTransport('local');
+        const data = (await res.json()) as TauriBridgeHealth;
+        return { ...data, transport: 'local' };
       }
       diagnostics.push(`${httpEndpoint}: HTTP ${res.status}`);
     } catch (err: unknown) {
@@ -245,6 +290,39 @@ export async function probeTauriBridge(timeoutMs = 2000): Promise<TauriBridgeHea
     }
   }
 
+  // 4. Hosted Cloud Control Channel fallback (works in Miro Desktop / Chrome / Safari on syncingboard.com)
+  if (pairingId) {
+    try {
+      const { sendAblyBridgeCommand } = await import('./companionRelayClient');
+      const resp = await sendAblyBridgeCommand<{
+        ok?: boolean;
+        status?: string;
+        version?: string;
+        figmaConnected?: boolean;
+        miroConnected?: boolean;
+        sessions?: number;
+      }>(pairingId, { type: 'health' }, Math.max(timeoutMs, 2500));
+      if (resp && (resp.ok || resp.status === 'ok')) {
+        setActiveBridgeTransport('ably-bridge');
+        return {
+          status: resp.status || 'ok',
+          version: resp.version || '0.18.0',
+          figmaConnected: Boolean(resp.figmaConnected),
+          miroConnected: Boolean(resp.miroConnected),
+          sessions: resp.sessions || 1,
+          wsUrl: 'ably-bridge',
+          transport: 'ably-bridge',
+        };
+      }
+      diagnostics.push(`ably-bridge(figma:${pairingId}): no ok response`);
+    } catch (err: unknown) {
+      diagnostics.push(
+        `ably-bridge(figma:${pairingId}): ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+  }
+
+  setActiveBridgeTransport(null);
   return null;
 }
 

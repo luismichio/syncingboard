@@ -2,6 +2,7 @@
 import './styles.css';
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
+import { initAblyCloudBridge } from './ablyBridge';
 
 const statusDot    = document.getElementById('bridge-dot');
 const statusText   = document.getElementById('bridge-text');
@@ -305,5 +306,6 @@ async function initStatus() {
 window.addEventListener('DOMContentLoaded', () => {
   setupTabs();
   setupSettings();
+  initAblyCloudBridge();
   void initStatus();
 });
